@@ -1,10 +1,37 @@
-"""A* pathfinding on a 2D grid."""
+"""A* pathfinding on a 2D grid with wall-proximity avoidance."""
 
 import heapq
 
 
-def astar_search(grid, grid_width, grid_height, start, goal):
-    """A* search on a boolean grid.
+def build_wall_cost(grid, grid_width, grid_height):
+    """Pre-compute extra cost for cells near walls. Cells adjacent to a blocked
+    cell get a penalty, making A* prefer open corridors over tight corners."""
+    cost = [[0.0] * grid_width for _ in range(grid_height)]
+    for y in range(grid_height):
+        for x in range(grid_width):
+            if not grid[y][x]:
+                continue
+            # Check 8 neighbors — if any is blocked, this cell is "wall-adjacent"
+            near_wall = False
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    nx, ny = x + dx, y + dy
+                    if nx < 0 or nx >= grid_width or ny < 0 or ny >= grid_height:
+                        near_wall = True
+                        break
+                    if not grid[ny][nx]:
+                        near_wall = True
+                        break
+                if near_wall:
+                    break
+            cost[y][x] = 3.0 if near_wall else 0.0
+    return cost
+
+
+def astar_search(grid, grid_width, grid_height, start, goal, wall_cost=None):
+    """A* search on a boolean grid with wall-avoidance penalty.
 
     Args:
         grid: 2D list[list[bool]], True=walkable.
@@ -17,6 +44,10 @@ def astar_search(grid, grid_width, grid_height, start, goal):
     """
     if start == goal:
         return [start]
+
+    # Use pre-computed wall costs or compute on the fly
+    if wall_cost is None:
+        wall_cost = build_wall_cost(grid, grid_width, grid_height)
 
     # 8-directional movement with diagonal cost
     DIRS = [
@@ -73,7 +104,8 @@ def astar_search(grid, grid_width, grid_height, start, goal):
             if neighbor in closed:
                 continue
 
-            tentative_g = g_score[current] + cost
+            # Base movement cost + wall proximity penalty
+            tentative_g = g_score[current] + cost + wall_cost[ny][nx]
             if tentative_g < g_score.get(neighbor, float('inf')):
                 came_from[neighbor] = current
                 g_score[neighbor] = tentative_g

@@ -268,6 +268,10 @@ class GameEngine:
         if not prov_cfg or not prov_cfg.api_key:
             return None
 
+        # Use per-player model if set, otherwise fall back to provider default
+        model = (player_cfg.model if player_cfg and player_cfg.model else prov_cfg.model)
+        print(f"[Config] {colour} -> model: {model}")
+
         from among_ai.ai.providers.anthropic_provider import AnthropicProvider
         from among_ai.ai.providers.openai_provider import OpenAIProvider
         from among_ai.ai.providers.google_provider import GoogleProvider
@@ -292,7 +296,7 @@ class GameEngine:
 
         cls = providers.get(provider_name)
         if cls:
-            return cls(api_key=prov_cfg.api_key, model=prov_cfg.model)
+            return cls(api_key=prov_cfg.api_key, model=model)
         return None
 
     def run(self):
@@ -323,13 +327,17 @@ class GameEngine:
                 if event.key == pg.K_ESCAPE:
                     self.playing = False
                 elif event.key == pg.K_TAB:
-                    # Cycle spectator camera target
+                    # Cycle spectator camera target (safe wrap)
                     alive = [p for p in self.ai_players if p.alive_status]
                     if alive:
                         self.spectator_target_idx = (
                             (self.spectator_target_idx + 1) % len(alive)
                         )
-                        self.player = alive[self.spectator_target_idx]
+                        try:
+                            self.player = alive[self.spectator_target_idx]
+                        except IndexError:
+                            self.spectator_target_idx = 0
+                            self.player = alive[0]
                 elif event.key == pg.K_SPACE:
                     self.paused = not self.paused
 
@@ -486,7 +494,7 @@ class GameEngine:
                     ai.is_doing_task = True
                     if ai.movement_ctrl:
                         ai.movement_ctrl.stop()
-                    self._log_event(f"{ai.bot_colour} started task: {task_name}")
+                    self._log_event(f"{ai.bot_colour} started task: {task_name}", global_event=False)
                 else:
                     # Need to walk there first
                     path = self.pathfinder.find_path(
@@ -507,7 +515,7 @@ class GameEngine:
                 ai.tasks_completed += 1
                 ai.is_doing_task = False
                 self.sound_manager.play_effect('task_completed')
-                self._log_event(f"{ai.bot_colour} completed: {task_name}")
+                self._log_event(f"{ai.bot_colour} completed: {task_name}", global_event=False)
                 # Natural pause after completing a task
                 ai.start_idle(
                     self.config.ai.idle_after_task_min,
@@ -533,7 +541,7 @@ class GameEngine:
                 dist = self.pathfinder.distance_between(
                     (ai.pos.x, ai.pos.y), (other.pos.x, other.pos.y)
                 )
-                if dist <= 150:
+                if dist <= 250:  # Kill range - generous to match LLM's "nearby" perception
                     target = other
                     break
 
@@ -545,7 +553,7 @@ class GameEngine:
             ai.kill_timer = KILL_COOLDOWN
             
             self.sound_manager.play_effect('imposter_kill_sound')
-            self._log_event(f"{ai.bot_colour} KILLED {target.bot_colour}!")
+            self._log_event(f"{ai.bot_colour} KILLED {target.bot_colour}!", global_event=False)
 
     def _ai_report_body(self, ai: AIPlayer):
         """AI reports a dead body."""
@@ -599,7 +607,7 @@ class GameEngine:
                     if other_vents:
                         dest = random.choice(other_vents)
                         ai.teleport_to(dest[0], dest[1])
-                        self._log_event(f"{ai.bot_colour} used a vent!")
+                        self._log_event(f"{ai.bot_colour} used a vent!", global_event=False)
 
     def _ai_sabotage_lights(self, ai: AIPlayer):
         """Impostor sabotages the lights."""
@@ -838,36 +846,31 @@ class GameEngine:
             )
             self.screen.blit(text, (10, HEIGHT - 30))
 
-            # Debug: Reasoning Overlay (Left side HUD, below event log)
-            if hasattr(self.player, 'last_reasoning') and self.player.last_reasoning:
-                # Format: "Thoughts (Color): [text]"
+            # Debug: Reasoning Overlay — only show when NOT in a meeting
+            if not self.emergency and hasattr(self.player, 'last_reasoning') and self.player.last_reasoning:
                 reasoning = f"Thoughts ({self.player.bot_colour}): {self.player.last_reasoning}"
-                
-                # Word wrap logic
+                # Word wrap
                 words = reasoning.split(' ')
                 lines = []
                 current_line = []
                 for word in words:
                     current_line.append(word)
-                    if len(' '.join(current_line)) > 40: # Char limit for side panel
+                    if len(' '.join(current_line)) > 50:
                         lines.append(' '.join(current_line[:-1]))
                         current_line = [word]
                 if current_line:
                     lines.append(' '.join(current_line))
+                lines = lines[:6]  # Max 6 lines to not bloat
 
-                # Draw background box (Left side, y=120 onwards)
                 start_y = 120
-                box_h = len(lines) * 20 + 10
-                s = pg.Surface((320, box_h))
-                s.set_alpha(150)
+                box_h = len(lines) * 18 + 14
+                s = pg.Surface((350, box_h))
+                s.set_alpha(180)
                 s.fill((0, 0, 0))
                 self.screen.blit(s, (10, start_y))
-                
-                # Draw lines
                 for i, line in enumerate(lines):
-                    # Yellowish text for thoughts
                     r_text = small.render(line, True, (255, 255, 100))
-                    self.screen.blit(r_text, (15, start_y + 5 + i * 20))
+                    self.screen.blit(r_text, (20, start_y + 7 + i * 18))
         
         # Task progress bar
         crew = [p.bot_colour for p in self.ai_players if not p.imposter]
@@ -950,14 +953,22 @@ class GameEngine:
         imp_text = small.render(f"Impostors were: {', '.join(impostors)}", True, (255, 100, 100))
         self.screen.blit(imp_text, (WIDTH//2 - imp_text.get_width()//2, HEIGHT//2 + 60))
 
-    def _log_event(self, message: str):
-        """Add an event to the log."""
+    def _log_event(self, message: str, global_event: bool = True):
+        """Add an event to the log. If global_event, notify all AI brains."""
         timestamp = time.time() - self.start_time
         self.event_log.append(f"[{int(timestamp)}s] {message}")
         print(f"[GAME] {message}")
         # Keep log bounded
         if len(self.event_log) > 50:
             self.event_log = self.event_log[-50:]
+
+        # Only inject globally important events into all brains
+        # (ejections, meetings, game over, sabotage announcements)
+        # Local events (kills, tasks) are handled by broadcast_action with radius
+        if global_event:
+            for ai in self.ai_players:
+                if ai.brain and hasattr(ai.brain, '_add_event'):
+                    ai.brain._add_event(message)
 
     def broadcast_action(self, actor_colour: str, action_desc: str, position: tuple, radius: float = 600):
         """Broadcast an event to all AI players within range."""

@@ -9,7 +9,8 @@ class OpenRouterProvider(BaseProvider):
 
     def __init__(self, api_key: str, model: str = "anthropic/claude-3.5-sonnet"):
         # Default to a good model if none specified
-        super().__init__(api_key, model, "OpenRouter")
+        # Use model name as the provider ID so it shows up in HUD (e.g., [google/gemini-2.0-flash-001])
+        super().__init__(api_key, model, provider_name=model)
         self._client = None
 
     def _get_client(self):
@@ -24,20 +25,23 @@ class OpenRouterProvider(BaseProvider):
     async def _call_api(self, system_prompt: str, user_prompt: str,
                         temperature: float, max_tokens: int,
                         stop_sequences: Optional[list]) -> LLMResponse:
+        """Simple two-message call (backward compat)."""
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        return await self._call_api_messages(messages, temperature, max_tokens, stop_sequences)
+
+    async def _call_api_messages(self, messages: list[dict],
+                                  temperature: float, max_tokens: int,
+                                  stop_sequences: Optional[list]) -> LLMResponse:
+        """Multi-turn message call with full history."""
         client = self._get_client()
         kwargs = {
             "model": self._model,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            # OpenRouter specific headers if needed, but standard OpenAI client handles basic auth
-            # "extra_headers": {
-            #     "HTTP-Referer": "https://github.com/AI0702/Among-Us-clone", 
-            #     "X-Title": "AmongAI"
-            # }
+            "messages": messages,
         }
         if stop_sequences:
             kwargs["stop"] = stop_sequences

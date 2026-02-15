@@ -13,17 +13,47 @@ from among_ai.constants import ROOMS, TASK_DEFINITIONS
 class AIBrain(IAIBrain):
     """Concrete AI brain using LLM for decisions with rule-based fallback."""
 
+    MAX_HISTORY = 40  # Max messages in history (mix of events + decisions)
+
     def __init__(self, colour: str, provider: ILLMProvider, personality: Personality):
         self.colour = colour
         self.provider = provider
         self.personality = personality
         self._role = "crewmate"
+        # Persistent conversation history shared across all LLM calls
+        self._history: list[dict] = []
 
     def set_role(self, role: str):
         self._role = role
 
+    def _trim_history(self):
+        """Keep history bounded."""
+        if len(self._history) > self.MAX_HISTORY:
+            self._history = self._history[-self.MAX_HISTORY:]
+
+    def _add_event(self, event_text: str):
+        """Inject a game event into history so the LLM remembers it."""
+        self._history.append({
+            "role": "user",
+            "content": f"[GAME EVENT] {event_text}"
+        })
+        self._trim_history()
+
+    def _build_messages(self, system_prompt: str, user_prompt: str) -> list[dict]:
+        """Build full message list: system + history + current prompt."""
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(self._history)
+        messages.append({"role": "user", "content": user_prompt})
+        return messages
+
+    def _record_exchange(self, user_summary: str, assistant_response: str):
+        """Record a concise summary of the exchange (not the raw prompt)."""
+        self._history.append({"role": "user", "content": user_summary})
+        self._history.append({"role": "assistant", "content": assistant_response})
+        self._trim_history()
+
     async def decide_action(self, game_state: GameStateSnapshot) -> AIDecision:
-        """Ask the LLM what to do."""
+        """Ask the LLM what to do, with full conversation history."""
         if not self.provider or not self.provider.is_available():
             return self.get_fallback_action(game_state)
 
@@ -33,12 +63,26 @@ class AIBrain(IAIBrain):
             )
             user_prompt = PromptBuilder.build_action_prompt(game_state)
 
-            response = await self.provider.generate(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
+            messages = self._build_messages(system_prompt, user_prompt)
+
+            response = await self.provider.generate_with_messages(
+                messages=messages,
                 temperature=0.7,
                 max_tokens=200,
             )
+
+            # Store a CONCISE summary, not the full game state dump
+            summary = (
+                f"[Turn] Room: {game_state.my_room} | "
+                f"Visible: {', '.join(p.colour for p in game_state.visible_players) or 'nobody'} | "
+                f"Tasks: {game_state.my_tasks_completed}/{game_state.my_tasks_total}"
+            )
+            if game_state.sabotage_active:
+                summary += f" | SABOTAGE: {game_state.sabotage_active}"
+            if game_state.visible_bodies:
+                summary += f" | BODIES: {', '.join(b.colour for b in game_state.visible_bodies)}"
+
+            self._record_exchange(summary, response.text.strip())
 
             decision = ActionParser.parse(response.text)
             return decision
@@ -49,7 +93,7 @@ class AIBrain(IAIBrain):
 
     async def generate_chat_message(self, game_state: GameStateSnapshot,
                                      chat_history: list, phase: str) -> str:
-        """Generate a chat message for meetings."""
+        """Generate a chat message for meetings, using shared history."""
         if not self.provider or not self.provider.is_available():
             return self._fallback_chat(game_state)
 
@@ -61,20 +105,25 @@ class AIBrain(IAIBrain):
                 game_state, chat_history, phase
             )
 
-            response = await self.provider.generate(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
+            messages = self._build_messages(system_prompt, user_prompt)
+
+            response = await self.provider.generate_with_messages(
+                messages=messages,
                 temperature=0.8,
                 max_tokens=150,
             )
-            # Clean up the response
+
             text = response.text.strip()
-            # Remove quotes if wrapped
             if text.startswith('"') and text.endswith('"'):
                 text = text[1:-1]
-            # Limit length
             if len(text) > 200:
                 text = text[:197] + "..."
+
+            # Record concisely
+            self._record_exchange(
+                f"[Meeting - {phase}] You spoke in the discussion.",
+                text
+            )
             return text
 
         except Exception as e:
@@ -83,7 +132,7 @@ class AIBrain(IAIBrain):
 
     async def decide_vote(self, game_state: GameStateSnapshot,
                            chat_history: list, alive_players: list) -> Optional[str]:
-        """Decide who to vote for."""
+        """Decide who to vote for, using shared history."""
         if not self.provider or not self.provider.is_available():
             return self._fallback_vote(game_state, alive_players)
 
@@ -95,13 +144,23 @@ class AIBrain(IAIBrain):
                 game_state, chat_history, alive_players
             )
 
-            response = await self.provider.generate(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
+            messages = self._build_messages(system_prompt, user_prompt)
+
+            response = await self.provider.generate_with_messages(
+                messages=messages,
                 temperature=0.5,
                 max_tokens=50,
             )
-            return ActionParser.parse_vote(response.text)
+
+            vote_result = ActionParser.parse_vote(response.text)
+
+            # Record the vote in history so they remember it
+            vote_text = vote_result if vote_result else "SKIP"
+            self._record_exchange(
+                f"[Voting] Time to vote. Alive: {', '.join(alive_players)}",
+                f"I vote for {vote_text}."
+            )
+            return vote_result
 
         except Exception as e:
             print(f"[{self.colour}] Vote LLM error: {e}")

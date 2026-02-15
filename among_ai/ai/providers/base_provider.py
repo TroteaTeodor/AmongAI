@@ -28,7 +28,7 @@ class BaseProvider(ILLMProvider):
     async def generate(self, system_prompt: str, user_prompt: str,
                        temperature: float = 0.7, max_tokens: int = 300,
                        stop_sequences: Optional[list] = None) -> LLMResponse:
-        """Generate with retry logic."""
+        """Generate with retry logic (simple system+user)."""
         last_error = None
         for attempt in range(self._max_retries + 1):
             try:
@@ -46,8 +46,44 @@ class BaseProvider(ILLMProvider):
 
         raise last_error
 
+    async def generate_with_messages(self, messages: list[dict],
+                                      temperature: float = 0.7, max_tokens: int = 300,
+                                      stop_sequences: Optional[list] = None) -> LLMResponse:
+        """Generate with full message history for multi-turn conversations."""
+        last_error = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                start = time.time()
+                response = await self._call_api_messages(
+                    messages, temperature, max_tokens, stop_sequences
+                )
+                latency = (time.time() - start) * 1000
+                response.latency_ms = latency
+                return response
+            except Exception as e:
+                last_error = e
+                if attempt < self._max_retries:
+                    await asyncio.sleep(self._retry_delay * (attempt + 1))
+
+        raise last_error
+
     async def _call_api(self, system_prompt: str, user_prompt: str,
                         temperature: float, max_tokens: int,
                         stop_sequences: Optional[list]) -> LLMResponse:
         """Override in subclasses to implement actual API call."""
         raise NotImplementedError
+
+    async def _call_api_messages(self, messages: list[dict],
+                                  temperature: float, max_tokens: int,
+                                  stop_sequences: Optional[list]) -> LLMResponse:
+        """Override in subclasses for multi-turn API calls.
+        Default: extract system+user from messages and call _call_api."""
+        # Fallback: just use last system and user message
+        system = ""
+        user = ""
+        for msg in messages:
+            if msg["role"] == "system":
+                system = msg["content"]
+            elif msg["role"] == "user":
+                user = msg["content"]
+        return await self._call_api(system, user, temperature, max_tokens, stop_sequences)

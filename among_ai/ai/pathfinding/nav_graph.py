@@ -17,6 +17,7 @@ class NavGraph(IPathfinder):
         self.cell_size = TILESIZE  # 32px cells
         self.map_width = 0
         self.map_height = 0
+        self._wall_cost = None   # Pre-computed wall proximity costs
 
     def build_from_tilemap(self, tiled_map):
         """Build the walkability grid from a TiledMap's collision objects."""
@@ -33,13 +34,18 @@ class NavGraph(IPathfinder):
             if obj['name'] in COLLISION_OBJECT_NAMES or obj['name'] is None:
                 self._mark_blocked(obj['x'], obj['y'], obj['width'], obj['height'])
 
+        # Pre-compute wall proximity costs once
+        from among_ai.ai.pathfinding.astar import build_wall_cost
+        self._wall_cost = build_wall_cost(self.grid, self.grid_width, self.grid_height)
+
     def _mark_blocked(self, x, y, w, h):
         """Mark grid cells covered by a collision rectangle as blocked.
         Inflates obstacles by half player width to avoid clipping."""
-        # Player is 64x86 (PLAYER_SPRITE_SIZE). Half width is 32.
-        # We need to inflate obstacles but 60 was too aggressive (blocked corridors).
-        # reducing to 40 to be safe but allow movement.
-        padding = 40
+        # Player is 64x86 (PLAYER_SPRITE_SIZE), half width = 32.
+        # Padding inflates each obstacle by this amount on all sides.
+        # 32px = half player width, keeps corridors open while avoiding most clipping.
+        # Stuck detection (180 frames) handles rare edge-case clipping.
+        padding = 32
         
         # Calculate grid bounds with padding
         gx1 = max(0, int((x - padding) / self.cell_size))
@@ -87,7 +93,7 @@ class NavGraph(IPathfinder):
 
         grid_path = astar_search(
             self.grid, self.grid_width, self.grid_height,
-            (sx, sy), (gx, gy)
+            (sx, sy), (gx, gy), self._wall_cost
         )
 
         if grid_path is None:
@@ -109,23 +115,49 @@ class NavGraph(IPathfinder):
         return None, None
 
     def _smooth_path(self, path):
-        """Remove redundant waypoints on straight lines."""
+        """Line-of-sight path simplification: skip waypoints the bot can walk to directly."""
         if len(path) <= 2:
             return path
+
         smoothed = [path[0]]
-        for i in range(1, len(path) - 1):
-            prev = smoothed[-1]
-            curr = path[i]
-            nxt = path[i + 1]
-            # Keep point if direction changes
-            dx1 = curr[0] - prev[0]
-            dy1 = curr[1] - prev[1]
-            dx2 = nxt[0] - curr[0]
-            dy2 = nxt[1] - curr[1]
-            if (dx1, dy1) != (dx2, dy2):
-                smoothed.append(curr)
-        smoothed.append(path[-1])
+        i = 0
+        while i < len(path) - 1:
+            # Try to skip as far ahead as possible with clear line of sight
+            best = i + 1
+            for j in range(len(path) - 1, i + 1, -1):
+                if self._has_line_of_sight(smoothed[-1], path[j]):
+                    best = j
+                    break
+            smoothed.append(path[best])
+            i = best
+
         return smoothed
+
+    def _has_line_of_sight(self, a, b):
+        """Check if a straight line between two world points crosses any blocked cells."""
+        # Bresenham-style walk along the grid
+        ax, ay = self._world_to_grid(a[0], a[1])
+        bx, by = self._world_to_grid(b[0], b[1])
+
+        dx = abs(bx - ax)
+        dy = abs(by - ay)
+        sx = 1 if bx > ax else -1
+        sy = 1 if by > ay else -1
+        err = dx - dy
+        cx, cy = ax, ay
+
+        while True:
+            if not self._is_walkable(cx, cy):
+                return False
+            if cx == bx and cy == by:
+                return True
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                cx += sx
+            if e2 < dx:
+                err += dx
+                cy += sy
 
     def get_room_at(self, position):
         """Determine which room a position is in based on nearest room center."""

@@ -216,7 +216,7 @@ class AIPlayer(pg.sprite.Sprite):
         self._task_just_completed = False
 
         # Individual kill cooldown
-        self.kill_timer = 20.0
+        self.kill_timer = 10.0  # Initial cooldown before first kill
         
         # Debug: reasoning text from last decision
         self.last_reasoning = ""
@@ -334,12 +334,13 @@ class AIPlayer(pg.sprite.Sprite):
                 break
 
     def _apply_movement(self):
-        """Apply velocity, check collisions."""
-        self.pos += self.vel * self.game.dt
+        """Apply velocity directly — no wall collision for AI bots.
+        Pathfinding already routes around walls, so collision checks
+        only cause getting stuck. If pathing clips a corner, just pass through."""
+        self.pos.x += self.vel.x * self.game.dt
+        self.pos.y += self.vel.y * self.game.dt
         self.rect.x = self.pos.x
-        self.collide_with_walls('x')
         self.rect.y = self.pos.y
-        self.collide_with_walls('y')
 
     def _update_animation(self, direction: str):
         """Update sprite animation based on movement direction."""

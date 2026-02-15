@@ -1,28 +1,27 @@
 game:
   mode: "watch_ai"            # "watch_ai", "play_with_ai", "chat_mode"
-  num_players: 10
-  num_impostors: 2
+  num_players: 4
+  num_impostors: 1
   discussion_time: 30
   voting_time: 30
   kill_cooldown: 15
-  sabotage_cooldown: 15
+  sabotage_cooldown: 45
   task_count: 8
   game_speed: 1.0
 
 ai:
-  decision_interval: 1.0      # FASTER: 1s instead of 3s
+  decision_interval: 3.0      # Paid models have no harsh rate limits
   vision_radius: 500
   vision_radius_dark: 150
+  max_concurrent_calls: 5     # Can be higher with paid models
   fallback_enabled: true
-  llm_timeout: 4.0            # Reduced timeout for speed
-  max_concurrent_calls: 5
   task_duration_min: 2.0
   task_duration_max: 5.0
   idle_after_task_min: 0.5
   idle_after_task_max: 1.5
 
   default_provider: "openrouter"
-  default_model: "google/gemini-2.0-flash-001"    # Standard Flash (very cheap/free tier)
+  default_model: "google/gemini-2.0-flash-001"
 
 providers:
   openrouter:
@@ -40,7 +39,7 @@ providers:
 players:
   - colour: "Red"
     provider: "openrouter"
-    model: "google/gemini-2.0-flash-001"
+    model: "deepseek/deepseek-chat-v3-0324"
     personality:
       name: "Commander"
       aggression: 0.6
@@ -53,7 +52,7 @@ players:
 
   - colour: "Blue"
     provider: "openrouter"
-    model: "meta-llama/llama-3-8b-instruct:free"
+    model: "mistralai/mistral-nemo"
     personality:
       name: "Detective"
       aggression: 0.3
@@ -66,7 +65,7 @@ players:
 
   - colour: "Orange"
     provider: "openrouter"
-    model: "microsoft/phi-3-mini-128k-instruct:free"
+    model: "google/gemini-2.0-flash-001"
     personality:
       name: "Socialite"
       aggression: 0.4
@@ -79,7 +78,7 @@ players:
 
   - colour: "Yellow"
     provider: "openrouter"
-    model: "mistralai/mistral-7b-instruct:free"
+    model: "openai/gpt-4o-mini"
     personality:
       name: "Strategist"
       aggression: 0.5
@@ -92,78 +91,78 @@ players:
 
   - colour: "Green"
     provider: "openrouter"
-    model: "google/gemini-2.0-flash-001" # Switching back to stable flash if free one fails
+    model: "mistralai/mistral-small-3.1-24b-instruct"
     personality:
       name: "Wildcard"
       aggression: 0.8
       suspicion_tendency: 0.4
       chattiness: 0.6
-      cooperation: 0.3
+      cooperation: 0.6
       deception_skill: 0.5
-      risk_tolerance: 0.9
-      speaking_style: "Unpredictable and energetic. Uses exclamation marks!"
+      risk_tolerance: 0.5
+      speaking_style: "Unpredictable and chaotic."
 
   - colour: "Black"
     provider: "openrouter"
-    model: "openchat/openchat-7b:free"
+    model: "qwen/qwen-2.5-72b-instruct"
     personality:
-      name: "Observer"
-      aggression: 0.2
-      suspicion_tendency: 0.6
-      chattiness: 0.3
-      cooperation: 0.9
-      deception_skill: 0.3
-      risk_tolerance: 0.2
-      speaking_style: "Quiet and observant. Only speaks when necessary."
+      name: "Silent"
+      aggression: 0.7
+      suspicion_tendency: 0.3
+      chattiness: 0.2
+      cooperation: 0.4
+      deception_skill: 0.9
+      risk_tolerance: 0.7
+      speaking_style: "Uses very few words. Mysterious."
 
   - colour: "Brown"
     provider: "openrouter"
-    model: "google/gemini-2.0-flash-001"
+    model: "meta-llama/llama-3.3-70b-instruct"
     personality:
-      name: "Follower"
-      aggression: 0.3
-      suspicion_tendency: 0.3
+      name: "Rookie"
+      aggression: 0.2
+      suspicion_tendency: 0.4
       chattiness: 0.6
-      cooperation: 1.0
-      deception_skill: 0.4
-      risk_tolerance: 0.3
-      speaking_style: "Agreeable and supportive. Often repeats what others say."
+      cooperation: 0.9
+      deception_skill: 0.2
+      risk_tolerance: 0.2
+      speaking_style: "Nervous and unsure. Asks for help often."
 
   - colour: "Pink"
     provider: "openrouter"
-    model: "meta-llama/llama-3-8b-instruct:free"
+    model: "anthropic/claude-3.5-haiku"
     personality:
-      name: "Instigator"
-      aggression: 0.7
-      suspicion_tendency: 0.8
-      chattiness: 0.8
-      cooperation: 0.4
-      deception_skill: 0.6
-      risk_tolerance: 0.7
-      speaking_style: "Provocative and accusing. Likes to stir the pot."
+      name: "Cheerleader"
+      aggression: 0.3
+      suspicion_tendency: 0.5
+      chattiness: 0.9
+      cooperation: 0.8
+      deception_skill: 0.5
+      risk_tolerance: 0.5
+      speaking_style: "Energetic and positive. Uses exclamation marks!"
 
   - colour: "Purple"
     provider: "openrouter"
-    model: "google/gemini-2.0-flash-001"
+    model: "microsoft/phi-4"
     personality:
-      name: "Logic"
-      aggression: 0.4
+      name: "Skeptic"
+      aggression: 0.5
       suspicion_tendency: 0.9
       chattiness: 0.6
-      cooperation: 0.7
-      deception_skill: 0.5
+      cooperation: 0.4
+      deception_skill: 0.6
       risk_tolerance: 0.4
-      speaking_style: "Logical and evidence-based. Focuses on facts."
+      speaking_style: "Doubts everything. Needs proof."
 
   - colour: "White"
     provider: "openrouter"
-    model: "meta-llama/llama-3-8b-instruct:free"
+    model: "google/gemini-2.5-flash-preview"
     personality:
-      name: "Innocent"
-      aggression: 0.2
+      name: "Peacemaker"
+      aggression: 0.1
       suspicion_tendency: 0.3
-      chattiness: 0.9
-      cooperation: 0.8
-      deception_skill: 0.6
+      chattiness: 0.7
+      cooperation: 1.0
+      deception_skill: 0.3
       risk_tolerance: 0.3
-      speaking_style: "Naive-sounding but perceptive. Often plays the underdog."
+      speaking_style: "Calm and mediating. Tries to stop fights."

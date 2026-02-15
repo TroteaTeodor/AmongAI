@@ -98,7 +98,7 @@ class DecisionLoop:
 
             decision = await asyncio.wait_for(
                 player.brain.decide_action(player_state),
-                timeout=6.0,
+                timeout=15.0,  # Free models can be slow
             )
             player.action_queue.append(decision)
             player.last_decision_time = time.time()

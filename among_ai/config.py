@@ -22,6 +22,7 @@ class PersonalityConfig:
 class PlayerConfig:
     colour: str
     provider: str = "anthropic"
+    model: str = ""  # Per-player model override
     personality: PersonalityConfig = field(default_factory=PersonalityConfig)
 
 
@@ -134,6 +135,7 @@ class Config:
                 pc = PlayerConfig(
                     colour=p['colour'],
                     provider=p.get('provider', self.ai.default_provider),
+                    model=p.get('model', ''),  # Per-player model
                     personality=PersonalityConfig(
                         name=pers.get('name', 'Default'),
                         aggression=pers.get('aggression', 0.5),

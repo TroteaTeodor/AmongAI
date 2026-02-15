@@ -7,12 +7,18 @@ from among_ai.constants import PLAYER_SPEED
 class MovementController:
     """Follows a path of waypoints, outputting velocity and direction each frame."""
 
+    STUCK_FRAMES = 90       # If no progress in ~1.5s, skip waypoint
+    STUCK_THRESHOLD = 3.0   # Minimum distance to consider "progress"
+
     def __init__(self):
         self.path = []           # List of (x, y) waypoints
         self.current_index = 0
         self.speed = PLAYER_SPEED
         self.arrival_threshold = 20.0  # Pixels to consider "arrived" at waypoint
         self.is_moving = False
+        # Stuck detection
+        self._last_pos = None
+        self._stuck_counter = 0
 
     def set_path(self, path):
         """Set a new path to follow."""
@@ -20,6 +26,8 @@ class MovementController:
             self.path = path
             self.current_index = 0
             self.is_moving = True
+            self._last_pos = None
+            self._stuck_counter = 0
         else:
             self.path = []
             self.current_index = 0
@@ -30,6 +38,8 @@ class MovementController:
         self.path = []
         self.current_index = 0
         self.is_moving = False
+        self._last_pos = None
+        self._stuck_counter = 0
 
     def has_arrived(self) -> bool:
         """True if we've reached the end of the path."""
@@ -75,7 +85,7 @@ class MovementController:
         return self._move_toward(target, current_pos)
 
     def update_position(self, current_pos):
-        """Update position tracking and advance waypoints.
+        """Update position tracking, advance waypoints, and detect stuck bots.
         Call this each frame with the sprite's current (x, y) position."""
         if not self.is_moving or self.current_index >= len(self.path):
             return
@@ -87,7 +97,28 @@ class MovementController:
 
         if dist <= self.arrival_threshold:
             self.current_index += 1
+            self._stuck_counter = 0
+            self._last_pos = None
             if self.current_index >= len(self.path):
                 self.is_moving = False
+            return
 
+        # Stuck detection: if position hasn't changed much in STUCK_FRAMES, skip waypoint
+        if self._last_pos is not None:
+            move_dx = current_pos[0] - self._last_pos[0]
+            move_dy = current_pos[1] - self._last_pos[1]
+            moved_dist = math.sqrt(move_dx * move_dx + move_dy * move_dy)
+            if moved_dist < self.STUCK_THRESHOLD:
+                self._stuck_counter += 1
+            else:
+                self._stuck_counter = 0
+        self._last_pos = current_pos
 
+        if self._stuck_counter >= self.STUCK_FRAMES:
+            # Skip to next waypoint (or stop if last one)
+            print(f"[MovementController] Stuck at waypoint {self.current_index}, skipping")
+            self.current_index += 1
+            self._stuck_counter = 0
+            self._last_pos = None
+            if self.current_index >= len(self.path):
+                self.is_moving = False
