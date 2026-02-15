@@ -91,6 +91,55 @@ class AIBrain(IAIBrain):
             print(f"[{self.colour}] LLM error: {e}")
             return self.get_fallback_action(game_state)
 
+    async def decide_opportunity(self, target_colour: str, target_room: str,
+                                  witnesses: list[str], kill_ready: bool) -> AIDecision:
+        """Quick LLM prompt: impostor spotted a crewmate — pursue or ignore?"""
+        if not self.provider or not self.provider.is_available():
+            # Fallback: chase if kill ready and no witnesses
+            if kill_ready and len(witnesses) == 0:
+                return AIDecision(
+                    action=AIAction.KILL, target_player=target_colour,
+                    reasoning="Fallback: alone with target, kill ready"
+                )
+            return AIDecision(action=AIAction.IDLE, reasoning="Fallback: ignore opportunity")
+
+        try:
+            system_prompt = (
+                f"You are {self.colour}, an IMPOSTOR in Among Us. "
+                f"You just spotted a crewmate. Make a quick tactical decision. "
+                f"Reply with EXACTLY one action on its own line, then a brief reason.\n"
+                f"Options:\n"
+                f"  KILL {target_colour} — if you think it's safe to kill right now\n"
+                f"  FOLLOW_PLAYER {target_colour} — stalk them and wait for a safe moment\n"
+                f"  IDLE — ignore this opportunity and continue what you were doing\n"
+            )
+
+            witness_str = ", ".join(witnesses) if witnesses else "nobody"
+            user_prompt = (
+                f"You see {target_colour} in {target_room}.\n"
+                f"Other players also nearby: {witness_str}\n"
+                f"Kill cooldown ready: {'YES' if kill_ready else 'NO'}\n"
+                f"What do you do?"
+            )
+
+            messages = self._build_messages(system_prompt, user_prompt)
+
+            response = await self.provider.generate_with_messages(
+                messages=messages, temperature=0.8, max_tokens=100,
+            )
+
+            self._record_exchange(
+                f"[Opportunity] Spotted {target_colour} in {target_room}, witnesses: {witness_str}",
+                response.text.strip()
+            )
+
+            decision = ActionParser.parse(response.text)
+            return decision
+
+        except Exception as e:
+            print(f"[{self.colour}] Opportunity prompt error: {e}")
+            return AIDecision(action=AIAction.IDLE, reasoning="Error, ignoring")
+
     async def generate_chat_message(self, game_state: GameStateSnapshot,
                                      chat_history: list, phase: str) -> str:
         """Generate a chat message for meetings, using shared history."""

@@ -462,6 +462,20 @@ class GameEngine:
             if path and ai.movement_ctrl:
                 ai.movement_ctrl.set_path(path)
 
+        elif action == AIAction.FOLLOW_PLAYER:
+            # Impostor stalks a target — path toward their current position
+            target_colour = decision.target_player
+            if target_colour:
+                for other in self.ai_players:
+                    if other.bot_colour == target_colour and other.alive_status:
+                        path = self.pathfinder.find_path(
+                            (ai.pos.x, ai.pos.y), (other.pos.x, other.pos.y)
+                        )
+                        if path and ai.movement_ctrl:
+                            ai.movement_ctrl.set_path(path)
+                            ai.following_target = target_colour
+                        break
+
         elif action == AIAction.IDLE:
             if ai.movement_ctrl:
                 ai.movement_ctrl.stop()

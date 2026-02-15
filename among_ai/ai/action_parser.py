@@ -8,21 +8,21 @@ from among_ai.constants import ROOMS, TASK_DEFINITIONS, ALL_COLOURS
 class ActionParser:
     """Parses free-text LLM responses into AIDecision objects."""
 
-    # Patterns for action extraction
+    # Patterns for action extraction — allow optional 'ACTION' or 'ACTION:' prefix
     _ACTION_PATTERNS = [
-        (r'(?:^|\n)\s*MOVE_TO_ROOM\s+(.+)', AIAction.MOVE_TO_ROOM),
-        (r'(?:^|\n)\s*DO_TASK\s+(.+)', AIAction.DO_TASK),
-        (r'(?:^|\n)\s*KILL\s+(\w+)', AIAction.KILL),
-        (r'(?:^|\n)\s*REPORT_BODY', AIAction.REPORT_BODY),
-        (r'(?:^|\n)\s*CALL_MEETING', AIAction.CALL_MEETING),
-        (r'(?:^|\n)\s*VENT', AIAction.VENT),
-        (r'(?:^|\n)\s*SABOTAGE_LIGHTS', AIAction.SABOTAGE_LIGHTS),
-        (r'(?:^|\n)\s*SABOTAGE_REACTOR', AIAction.SABOTAGE_REACTOR),
-        (r'(?:^|\n)\s*FIX_LIGHTS', AIAction.FIX_LIGHTS),
-        (r'(?:^|\n)\s*FIX_REACTOR', AIAction.FIX_REACTOR),
-        (r'(?:^|\n)\s*FOLLOW_PLAYER\s+(\w+)', AIAction.FOLLOW_PLAYER),
-        (r'(?:^|\n)\s*FLEE', AIAction.FLEE),
-        (r'(?:^|\n)\s*IDLE', AIAction.IDLE),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*MOVE_TO_ROOM\s+(.+)', AIAction.MOVE_TO_ROOM),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*DO_TASK\s+(.+)', AIAction.DO_TASK),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*KILL\s+(\w+)', AIAction.KILL),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*REPORT_BODY', AIAction.REPORT_BODY),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*CALL_MEETING', AIAction.CALL_MEETING),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*VENT', AIAction.VENT),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*SABOTAGE_LIGHTS', AIAction.SABOTAGE_LIGHTS),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*SABOTAGE_REACTOR', AIAction.SABOTAGE_REACTOR),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*FIX_LIGHTS', AIAction.FIX_LIGHTS),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*FIX_REACTOR', AIAction.FIX_REACTOR),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*FOLLOW_PLAYER\s+(\w+)', AIAction.FOLLOW_PLAYER),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*FLEE', AIAction.FLEE),
+        (r'(?:^|\n)\s*(?:ACTION[:\s]*)?\s*IDLE', AIAction.IDLE),
     ]
 
     @staticmethod
@@ -75,7 +75,7 @@ class ActionParser:
         # Check for room names
         for room in ROOMS:
             if room.lower() in text_lower:
-                if any(w in text_lower for w in ["go to", "move to", "head to", "walk to", "navigate"]):
+                if any(w in text_lower for w in ["go to", "move to", "head to", "walk to", "navigate", "heading to"]):
                     return AIDecision(
                         action=AIAction.MOVE_TO_ROOM,
                         target_room=room,
@@ -85,7 +85,7 @@ class ActionParser:
         # Check for task names
         for task in TASK_DEFINITIONS:
             if task.lower() in text_lower:
-                if any(w in text_lower for w in ["do", "complete", "task", "work on"]):
+                if any(w in text_lower for w in ["do", "complete", "task", "work on", "start"]):
                     return AIDecision(
                         action=AIAction.DO_TASK,
                         target_task=task,
@@ -102,6 +102,16 @@ class ActionParser:
                         reasoning=text[:200],
                     )
 
+        # Check for follow
+        if any(w in text_lower for w in ["follow", "stalk", "trail", "shadow"]):
+            for colour in ALL_COLOURS:
+                if colour.lower() in text_lower:
+                    return AIDecision(
+                        action=AIAction.FOLLOW_PLAYER,
+                        target_player=colour,
+                        reasoning=text[:200],
+                    )
+
         # Check for report
         if "report" in text_lower and "body" in text_lower:
             return AIDecision(action=AIAction.REPORT_BODY, reasoning=text[:200])
@@ -111,6 +121,10 @@ class ActionParser:
                 return AIDecision(action=AIAction.SABOTAGE_LIGHTS, reasoning=text[:200])
             if "reactor" in text_lower:
                 return AIDecision(action=AIAction.SABOTAGE_REACTOR, reasoning=text[:200])
+
+        # Check for idle / hang out / wait
+        if any(w in text_lower for w in ["hang out", "wait", "stay", "idle", "just chill"]):
+            return AIDecision(action=AIAction.IDLE, reasoning=text[:200])
 
         return None
 

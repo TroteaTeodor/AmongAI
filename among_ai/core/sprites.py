@@ -217,6 +217,8 @@ class AIPlayer(pg.sprite.Sprite):
 
         # Individual kill cooldown
         self.kill_timer = 10.0  # Initial cooldown before first kill
+        self.following_target = None  # Colour of player being stalked
+        self._opportunity_cooldown = 0.0  # Prevent spam LLM calls
         
         # Debug: reasoning text from last decision
         self.last_reasoning = ""
@@ -281,6 +283,9 @@ class AIPlayer(pg.sprite.Sprite):
         # Update kill timer
         if hasattr(self, 'kill_timer') and self.kill_timer > 0:
             self.kill_timer -= self.game.dt
+        # Update opportunity cooldown
+        if hasattr(self, '_opportunity_cooldown') and self._opportunity_cooldown > 0:
+            self._opportunity_cooldown -= self.game.dt
             
         # Check for urgent vision events (bodies) every few frames
         # Only check every 10 frames to save performance
@@ -332,6 +337,57 @@ class AIPlayer(pg.sprite.Sprite):
                 self.last_decision_time = 0
                 print(f"[{self.bot_colour}] SAW BODY! Interrupting task.")
                 break
+
+        # IMPOSTOR: Opportunistic kill detection
+        if self.imposter and self.brain and self._opportunity_cooldown <= 0:
+            nearby_crew = []
+            nearby_witnesses = []
+            for other in self.game.ai_players:
+                if other is self or not other.alive_status:
+                    continue
+                dx = other.pos.x - self.pos.x
+                dy = other.pos.y - self.pos.y
+                dist = (dx*dx + dy*dy)**0.5
+                if dist < vision_radius * 0.6:  # Close range
+                    if not other.imposter:
+                        nearby_crew.append(other)
+                    else:
+                        pass  # Fellow impostor, not a witness
+                elif dist < vision_radius:
+                    nearby_witnesses.append(other.bot_colour)
+
+            # If we see exactly 1 crewmate nearby, trigger opportunity
+            if len(nearby_crew) >= 1:
+                target = nearby_crew[0]
+                target_room = "nearby"
+                if hasattr(self.game, 'pathfinder') and self.game.pathfinder:
+                    target_room = self.game.pathfinder.get_room_at((target.pos.x, target.pos.y))
+
+                kill_ready = self.kill_timer <= 0
+                # Fire async opportunity decision
+                self._opportunity_cooldown = 10.0  # Don't spam
+                import asyncio, threading
+                def _fire_opportunity():
+                    loop = asyncio.new_event_loop()
+                    try:
+                        decision = loop.run_until_complete(
+                            self.brain.decide_opportunity(
+                                target.bot_colour, target_room,
+                                nearby_witnesses, kill_ready
+                            )
+                        )
+                        # Queue the decision
+                        self.action_queue.clear()
+                        self.current_action = None
+                        self.action_queue.append(decision)
+                        self.last_decision_time = time.time()
+                        self.last_reasoning = decision.reasoning[:200]
+                        print(f"[{self.bot_colour}] OPPORTUNITY: {decision.action.value} -> {decision.target_player or 'n/a'}")
+                    except Exception as e:
+                        print(f"[{self.bot_colour}] Opportunity error: {e}")
+                    finally:
+                        loop.close()
+                threading.Thread(target=_fire_opportunity, daemon=True).start()
 
     def _apply_movement(self):
         """Apply velocity directly — no wall collision for AI bots.
