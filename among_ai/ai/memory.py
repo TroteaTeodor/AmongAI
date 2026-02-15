@@ -14,6 +14,17 @@ class Memory(IMemory):
         self.events: list[MemoryEvent] = []
         self.suspicion: dict[str, float] = {}   # colour -> 0.0-1.0
         self.last_known_locations: dict[str, tuple] = {}  # colour -> (room, timestamp)
+        self.sighting_log: list[dict] = []  # [{colour, room, timestamp}]
+
+    def add_event(self, description: str, importance: float = 0.5):
+        """Convenience: add a simple text event to memory."""
+        self.record_event(MemoryEvent(
+            timestamp=time.time(),
+            event_type="observation",
+            location="unknown",
+            description=description,
+            importance=importance,
+        ))
 
     def record_event(self, event: MemoryEvent):
         self.events.append(event)
@@ -26,6 +37,19 @@ class Memory(IMemory):
             self.events.sort(key=lambda e: (e.importance, e.timestamp))
             self.events = self.events[len(self.events) - self.MAX_EVENTS:]
             self.events.sort(key=lambda e: e.timestamp)
+
+    def record_sighting(self, player_colour: str, room: str):
+        """Record seeing a player in a specific room right now."""
+        now = time.time()
+        self.last_known_locations[player_colour] = (room, now)
+        # Keep a log of recent sightings (max 30)
+        self.sighting_log.append({
+            "colour": player_colour,
+            "room": room,
+            "timestamp": now,
+        })
+        if len(self.sighting_log) > 30:
+            self.sighting_log = self.sighting_log[-30:]
 
     def get_recent_events(self, count: int = 10) -> list:
         return self.events[-count:]
@@ -45,13 +69,27 @@ class Memory(IMemory):
         return dict(self.last_known_locations)
 
     def summarize_for_prompt(self, max_tokens: int = 500) -> str:
-        """Generate a text summary of recent events and suspicions."""
+        """Generate a text summary of recent events, sightings, and suspicions."""
         lines = []
         now = time.time()
         recent = self.get_recent_events(12)
         for event in reversed(recent):
             ago = int(now - event.timestamp)
             lines.append(f"- {ago}s ago: {event.description}")
+
+        # Player sighting history
+        if self.last_known_locations:
+            lines.append("")
+            lines.append("LAST SEEN PLAYERS:")
+            for colour, (room, ts) in sorted(
+                self.last_known_locations.items(),
+                key=lambda x: x[1][1], reverse=True
+            ):
+                ago = int(now - ts)
+                if ago < 60:
+                    lines.append(f"- {colour}: in {room} ({ago}s ago)")
+                elif ago < 300:
+                    lines.append(f"- {colour}: in {room} ({ago // 60}m {ago % 60}s ago)")
 
         # Add suspicion summary
         suspicious = [(c, s) for c, s in self.suspicion.items() if s > 0.3]
@@ -69,3 +107,5 @@ class Memory(IMemory):
         self.events.clear()
         self.suspicion.clear()
         self.last_known_locations.clear()
+        self.sighting_log.clear()
+

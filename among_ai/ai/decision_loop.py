@@ -208,14 +208,80 @@ class DecisionLoop:
         return False
 
     async def run_meeting_discussion(self, game_state, meeting_manager):
-        """Run AI discussion during a meeting. Called from main thread via queue."""
+        """Run structured AI discussion during a meeting.
+        
+        Flow: caller speaks first → each player replies once → 2 FFA rounds.
+        3-second delay between each LLM call for natural pacing.
+        """
         alive_players = [p for p in self.ai_players if p.alive_status]
         if not alive_players:
             return
 
-        # Each player takes a turn speaking (up to 3 rounds)
-        for round_num in range(3):
-            import random
+        import random
+
+        # Find the meeting caller
+        caller = None
+        others = []
+        for p in alive_players:
+            if p.bot_colour == meeting_manager.caller_colour:
+                caller = p
+            else:
+                others.append(p)
+
+        # --- Phase 1: Caller speaks first ---
+        if caller and caller.brain:
+            try:
+                player_state = self._personalize_state(game_state, caller)
+                message = await asyncio.wait_for(
+                    caller.brain.generate_chat_message(
+                        player_state,
+                        meeting_manager.chat_messages,
+                        "discussion_opener",
+                    ),
+                    timeout=10.0,
+                )
+                meeting_manager.add_chat_message(caller.bot_colour, message)
+            except Exception as e:
+                print(f"[{caller.bot_colour}] Chat error (opener): {e}")
+                if meeting_manager.is_report:
+                    meeting_manager.add_chat_message(
+                        caller.bot_colour,
+                        f"I found a body! We need to discuss this."
+                    )
+                else:
+                    meeting_manager.add_chat_message(caller.bot_colour, "I called this meeting. Let's discuss.")
+            await asyncio.sleep(3.0)
+
+        if not self.meeting_active:
+            return
+
+        # --- Phase 2: Each other player replies once (round-robin) ---
+        random.shuffle(others)
+        for player in others:
+            if not self.meeting_active:
+                return
+            if player.brain is None:
+                continue
+            try:
+                player_state = self._personalize_state(game_state, player)
+                message = await asyncio.wait_for(
+                    player.brain.generate_chat_message(
+                        player_state,
+                        meeting_manager.chat_messages,
+                        "discussion_reply",
+                    ),
+                    timeout=10.0,
+                )
+                meeting_manager.add_chat_message(player.bot_colour, message)
+            except Exception as e:
+                print(f"[{player.bot_colour}] Chat error (reply): {e}")
+                meeting_manager.add_chat_message(player.bot_colour, "...")
+            await asyncio.sleep(3.0)
+
+        # --- Phase 3: FFA rounds (everyone gets 2 more chances) ---
+        for round_num in range(2):
+            if not self.meeting_active:
+                return
             speaking_order = list(alive_players)
             random.shuffle(speaking_order)
 
@@ -224,7 +290,6 @@ class DecisionLoop:
                     return
                 if player.brain is None:
                     continue
-
                 try:
                     player_state = self._personalize_state(game_state, player)
                     message = await asyncio.wait_for(
@@ -233,15 +298,12 @@ class DecisionLoop:
                             meeting_manager.chat_messages,
                             "discussion",
                         ),
-                        timeout=8.0,
+                        timeout=10.0,
                     )
                     meeting_manager.add_chat_message(player.bot_colour, message)
                 except Exception as e:
                     print(f"[{player.bot_colour}] Chat error: {e}")
-                    meeting_manager.add_chat_message(
-                        player.bot_colour, "..."
-                    )
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(3.0)
 
     async def run_meeting_votes(self, game_state, meeting_manager, alive_colours):
         """Collect votes from all AI players."""

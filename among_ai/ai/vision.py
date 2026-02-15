@@ -70,6 +70,9 @@ class Vision:
                 description=f"Saw {vp['colour']} in {room} ({int(vp['distance'])} units away)",
                 importance=0.3,
             ))
+            # Also update sighting log for location tracking
+            if hasattr(memory, 'record_sighting'):
+                memory.record_sighting(vp["colour"], room)
 
         # Record body sightings
         for body in visible_bodies:

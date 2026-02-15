@@ -1,8 +1,8 @@
 """All game constants: map coordinates, rooms, tasks, vents, spawns, settings."""
 
 # Display
-WIDTH = 1280
-HEIGHT = 640
+WIDTH = 1920
+HEIGHT = 1080
 FPS = 60
 TITLE = "Among AI"
 TILESIZE = 32

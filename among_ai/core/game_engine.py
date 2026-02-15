@@ -340,6 +340,9 @@ class GameEngine:
                             self.player = alive[0]
                 elif event.key == pg.K_SPACE:
                     self.paused = not self.paused
+            elif event.type == pg.MOUSEWHEEL:
+                if self.meeting_manager.is_active:
+                    self.chat_renderer.handle_event(event)
 
     def update(self):
         """Update game state each frame."""
@@ -862,29 +865,48 @@ class GameEngine:
 
             # Debug: Reasoning Overlay — only show when NOT in a meeting
             if not self.emergency and hasattr(self.player, 'last_reasoning') and self.player.last_reasoning:
-                reasoning = f"Thoughts ({self.player.bot_colour}): {self.player.last_reasoning}"
-                # Word wrap
+                reasoning = self.player.last_reasoning
+                # Word wrap at 60 chars
                 words = reasoning.split(' ')
                 lines = []
                 current_line = []
                 for word in words:
                     current_line.append(word)
-                    if len(' '.join(current_line)) > 50:
+                    if len(' '.join(current_line)) > 60:
                         lines.append(' '.join(current_line[:-1]))
                         current_line = [word]
                 if current_line:
                     lines.append(' '.join(current_line))
-                lines = lines[:6]  # Max 6 lines to not bloat
+                lines = lines[:6]
 
-                start_y = 120
-                box_h = len(lines) * 18 + 14
-                s = pg.Surface((350, box_h))
-                s.set_alpha(180)
-                s.fill((0, 0, 0))
-                self.screen.blit(s, (10, start_y))
+                start_y = 110
+                box_w = 420
+                header_h = 22
+                box_h = header_h + len(lines) * 20 + 12
+
+                # Background
+                bg = pg.Surface((box_w, box_h), pg.SRCALPHA)
+                bg.fill((10, 10, 30, 200))
+                self.screen.blit(bg, (8, start_y))
+
+                # Header bar
+                player_colour_rgb = PLAYER_DISPLAY_COLORS.get(
+                    self.player.bot_colour, (200, 200, 200))
+                pg.draw.rect(self.screen, player_colour_rgb,
+                           (8, start_y, box_w, header_h))
+                header = small.render(
+                    f"💭 {self.player.bot_colour}'s Thoughts",
+                    True, (0, 0, 0))
+                self.screen.blit(header, (14, start_y + 3))
+
+                # Border
+                pg.draw.rect(self.screen, (60, 60, 100),
+                           (8, start_y, box_w, box_h), 1)
+
+                # Text lines
                 for i, line in enumerate(lines):
-                    r_text = small.render(line, True, (255, 255, 100))
-                    self.screen.blit(r_text, (20, start_y + 7 + i * 18))
+                    r_text = small.render(line, True, (230, 230, 200))
+                    self.screen.blit(r_text, (16, start_y + header_h + 6 + i * 20))
         
         # Task progress bar
         crew = [p.bot_colour for p in self.ai_players if not p.imposter]
