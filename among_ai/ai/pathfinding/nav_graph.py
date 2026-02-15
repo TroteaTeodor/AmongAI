@@ -34,11 +34,19 @@ class NavGraph(IPathfinder):
                 self._mark_blocked(obj['x'], obj['y'], obj['width'], obj['height'])
 
     def _mark_blocked(self, x, y, w, h):
-        """Mark grid cells covered by a collision rectangle as blocked."""
-        gx1 = max(0, int(x / self.cell_size))
-        gy1 = max(0, int(y / self.cell_size))
-        gx2 = min(self.grid_width - 1, int((x + w) / self.cell_size))
-        gy2 = min(self.grid_height - 1, int((y + h) / self.cell_size))
+        """Mark grid cells covered by a collision rectangle as blocked.
+        Inflates obstacles by half player width to avoid clipping."""
+        # Player is 64x86 (PLAYER_SPRITE_SIZE). Half width is 32.
+        # We need to inflate obstacles but 60 was too aggressive (blocked corridors).
+        # reducing to 40 to be safe but allow movement.
+        padding = 40
+        
+        # Calculate grid bounds with padding
+        gx1 = max(0, int((x - padding) / self.cell_size))
+        gy1 = max(0, int((y - padding) / self.cell_size))
+        gx2 = min(self.grid_width - 1, int((x + w + padding) / self.cell_size))
+        gy2 = min(self.grid_height - 1, int((y + h + padding) / self.cell_size))
+        
         for gy in range(gy1, gy2 + 1):
             for gx in range(gx1, gx2 + 1):
                 self.grid[gy][gx] = False

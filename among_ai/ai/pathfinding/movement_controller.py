@@ -41,17 +41,38 @@ class MovementController:
             return self.path[self.current_index]
         return None
 
-    def get_velocity_and_direction(self) -> tuple:
-        """Calculate velocity toward current waypoint.
+    def _move_toward(self, target, current_pos):
+        """Internal: compute velocity toward a target point from current position."""
+        dx = target[0] - current_pos[0]
+        dy = target[1] - current_pos[1]
+        dist = math.sqrt(dx * dx + dy * dy)
+        
+        if dist < 1.0:
+            return (0, 0), None
+            
+        # Normalize and scale
+        scale = self.speed / dist
+        vx = dx * scale
+        vy = dy * scale
+        
+        # Determine direction for animation
+        direction = "down"
+        if abs(vx) > abs(vy):
+            if vx > 0: direction = "right"
+            else: direction = "left"
+        else:
+            if vy > 0: direction = "down"
+            else: direction = "up"
+            
+        return (vx, vy), direction
 
-        Returns:
-            ((vx, vy), direction_str) where direction_str is 'left'/'right'/'up'/'down' or None.
-        """
+    def get_velocity_and_direction(self, current_pos) -> tuple:
+        """Calculate velocity toward current waypoint."""
         if not self.is_moving or self.current_index >= len(self.path):
             return (0, 0), None
 
         target = self.path[self.current_index]
-        return self._move_toward(target)
+        return self._move_toward(target, current_pos)
 
     def update_position(self, current_pos):
         """Update position tracking and advance waypoints.
@@ -69,50 +90,4 @@ class MovementController:
             if self.current_index >= len(self.path):
                 self.is_moving = False
 
-    def _move_toward(self, target):
-        """Internal: compute velocity toward a target point.
 
-        We don't know current position here - velocity is directional based on
-        the path segment. The actual position update happens in the sprite."""
-        # This is called to get direction; the sprite applies its own pos.
-        # We store the target and let the sprite do: vel = direction * speed
-        # Direction is based on the waypoint segment.
-        return self._compute_direction(target)
-
-    def _compute_direction(self, target):
-        """Compute velocity components and animation direction from path context."""
-        if self.current_index <= 0 and len(self.path) > 1:
-            prev = self.path[0]
-            nxt = self.path[min(1, len(self.path) - 1)]
-        elif self.current_index > 0:
-            prev = self.path[self.current_index - 1]
-            nxt = target
-        else:
-            return (0, 0), None
-
-        dx = nxt[0] - prev[0]
-        dy = nxt[1] - prev[1]
-        dist = math.sqrt(dx * dx + dy * dy)
-
-        if dist < 1.0:
-            return (0, 0), None
-
-        # Normalize and scale to PLAYER_SPEED
-        nx = dx / dist
-        ny = dy / dist
-        vx = nx * self.speed
-        vy = ny * self.speed
-
-        # Determine animation direction (dominant axis)
-        if abs(dx) >= abs(dy):
-            direction = "right" if dx > 0 else "left"
-        else:
-            direction = "down" if dy > 0 else "up"
-
-        # Diagonal normalization
-        if abs(vx) > 0 and abs(vy) > 0:
-            factor = self.speed / math.sqrt(vx * vx + vy * vy)
-            vx *= factor
-            vy *= factor
-
-        return (vx, vy), direction

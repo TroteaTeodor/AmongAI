@@ -106,16 +106,30 @@ VENT_LOCATIONS = [
     (2121, 1249), (4447, 363),
 ]
 
-# Player spawn positions
+# Player spawn positions (Wider circle around Cafeteria table/button)
+# Button is at approx (3284, 669). Table is roughly 200x200 centered there.
+# Moving spawns to ~200px+ distance.
 PLAYER_SPAWN_POSITIONS = [
-    (3288, 873), (3046, 791), (3046, 651),
-    (3563, 653), (3563, 762), (2968, 530), (3566, 553),
+    (3000, 670),  # Left
+    (3550, 670),  # Right
+    (3280, 450),  # Top
+    (3280, 900),  # Bottom
+    (3100, 500),  # Top-Left
+    (3450, 500),  # Top-Right
 ]
 
-# Bot spawn positions (from original BOT_POS)
+# Bot spawn positions (Wider circle)
 BOT_SPAWN_POSITIONS = [
-    (5401, 1530), (3686, 1857), (3733, 2626), (2325, 1814),
-    (1718, 1282), (1288, 2418), (1249, 506), (2513, 1286),
+    (3100, 850),  # Bottom-Left
+    (3450, 850),  # Bottom-Right
+    (3000, 600),  # Left side 2
+    (3550, 600),  # Right side 2
+    (3280, 400),  # Far Top
+    (3280, 950),  # Far Bottom
+    (2900, 670),  # Far Left
+    (3650, 670),  # Far Right
+    (3150, 900),
+    (3400, 900),
 ]
 
 # Task definitions: name -> {location, radius, duration_base, room}

@@ -100,6 +100,7 @@ class GameEngine:
         self.walls = pg.sprite.Group()
         self.bots = pg.sprite.Group()
         self.items = pg.sprite.Group()
+        self.dead_bodies = pg.sprite.Group()
 
         # Invisible player image
         self.invisible_player_image = None
@@ -122,6 +123,9 @@ class GameEngine:
 
         # Event log for display
         self.event_log: list[str] = []
+        
+        # Frame counter for passive vision checks
+        self.frame_count = 0
 
     def load_data(self):
         """Load all game assets and build navigation graph."""
@@ -272,6 +276,7 @@ class GameEngine:
         from among_ai.ai.providers.mistral_provider import MistralProvider
         from among_ai.ai.providers.deepseek_provider import DeepSeekProvider
         from among_ai.ai.providers.cohere_provider import CohereProvider
+        from among_ai.ai.providers.openrouter_provider import OpenRouterProvider
 
         providers = {
             "anthropic": AnthropicProvider,
@@ -282,6 +287,7 @@ class GameEngine:
             "mistral": MistralProvider,
             "deepseek": DeepSeekProvider,
             "cohere": CohereProvider,
+            "openrouter": OpenRouterProvider,
         }
 
         cls = providers.get(provider_name)
@@ -329,6 +335,9 @@ class GameEngine:
 
     def update(self):
         """Update game state each frame."""
+        # Increment frame counter for passive checks
+        self.frame_count += 1
+        
         # Update timers
         self.timers.update()
 
@@ -391,6 +400,12 @@ class GameEngine:
 
     def _execute_ai_action(self, ai: AIPlayer, decision):
         """Translate an AIDecision into game actions."""
+        # Store reasoning for debug display
+        if hasattr(ai, 'last_reasoning'):
+            ai.last_reasoning = decision.reasoning
+            # Log it for verification
+            print(f"[{ai.bot_colour} Debug] {decision.reasoning}")
+            
         action = decision.action
 
         if action == AIAction.MOVE_TO_ROOM:
@@ -501,8 +516,16 @@ class GameEngine:
 
     def _ai_kill(self, ai: AIPlayer, target_colour: str):
         """Impostor AI kills a target."""
-        if not ai.imposter or not self.timers.is_ready('kill_cooldown'):
+        # Use individual kill timer
+        if not ai.imposter:
             return
+            
+        if hasattr(ai, 'kill_timer') and ai.kill_timer > 0:
+            return
+            
+        # Also check global cooldown as a backup (optional, but good for safety)
+        # if not self.timers.is_ready('kill_cooldown'):
+        #    return
 
         target = None
         for other in self.ai_players:
@@ -516,7 +539,11 @@ class GameEngine:
 
         if target:
             target.kill_target()
-            self.timers.restart('kill_cooldown')
+            
+            # Reset this player's cooldown
+            from among_ai.constants import KILL_COOLDOWN
+            ai.kill_timer = KILL_COOLDOWN
+            
             self.sound_manager.play_effect('imposter_kill_sound')
             self._log_event(f"{ai.bot_colour} KILLED {target.bot_colour}!")
 
@@ -578,6 +605,11 @@ class GameEngine:
         """Impostor sabotages the lights."""
         if not ai.imposter or not self.timers.is_ready('sabotage_cooldown'):
             return
+            
+        # Don't sabotage if another crisis is active
+        if self.night or self.night_reactor:
+            return
+
         self.night = True
         self.timers.restart('sabotage_cooldown')
         self.timers.start('lights_duration')
@@ -588,6 +620,11 @@ class GameEngine:
         """Impostor sabotages the reactor."""
         if not ai.imposter or not self.timers.is_ready('sabotage_cooldown'):
             return
+
+        # Don't sabotage if another crisis is active
+        if self.night or self.night_reactor:
+            return
+
         self.night_reactor = True
         self.timers.restart('sabotage_cooldown')
         self.timers.start('reactor_meltdown')
@@ -793,12 +830,45 @@ class GameEngine:
             provider_name = ""
             if hasattr(self.player, 'brain') and self.player.brain and self.player.brain.provider:
                 provider_name = f" [{self.player.brain.provider.get_provider_name()}]"
+            
+            # Basic info
             text = font.render(
                 f"Watching: {colour} ({role}){provider_name} | TAB to switch | SPACE to pause",
                 True, WHITE
             )
             self.screen.blit(text, (10, HEIGHT - 30))
 
+            # Debug: Reasoning Overlay (Left side HUD, below event log)
+            if hasattr(self.player, 'last_reasoning') and self.player.last_reasoning:
+                # Format: "Thoughts (Color): [text]"
+                reasoning = f"Thoughts ({self.player.bot_colour}): {self.player.last_reasoning}"
+                
+                # Word wrap logic
+                words = reasoning.split(' ')
+                lines = []
+                current_line = []
+                for word in words:
+                    current_line.append(word)
+                    if len(' '.join(current_line)) > 40: # Char limit for side panel
+                        lines.append(' '.join(current_line[:-1]))
+                        current_line = [word]
+                if current_line:
+                    lines.append(' '.join(current_line))
+
+                # Draw background box (Left side, y=120 onwards)
+                start_y = 120
+                box_h = len(lines) * 20 + 10
+                s = pg.Surface((320, box_h))
+                s.set_alpha(150)
+                s.fill((0, 0, 0))
+                self.screen.blit(s, (10, start_y))
+                
+                # Draw lines
+                for i, line in enumerate(lines):
+                    # Yellowish text for thoughts
+                    r_text = small.render(line, True, (255, 255, 100))
+                    self.screen.blit(r_text, (15, start_y + 5 + i * 20))
+        
         # Task progress bar
         crew = [p.bot_colour for p in self.ai_players if not p.imposter]
         done = self.task_manager.get_total_completed_all_crew(crew)
@@ -852,11 +922,11 @@ class GameEngine:
         except Exception:
             font = pg.font.SysFont("arial", 11)
 
-        y = HEIGHT - 50
-        for msg in self.event_log[-3:]:
+        y = 10
+        for msg in self.event_log[-5:]:
             text = font.render(msg, True, (200, 200, 200))
             self.screen.blit(text, (10, y))
-            y -= 16
+            y += 16
 
     def _draw_game_over(self, message: str):
         """Draw game over screen."""
@@ -888,6 +958,23 @@ class GameEngine:
         # Keep log bounded
         if len(self.event_log) > 50:
             self.event_log = self.event_log[-50:]
+
+    def broadcast_action(self, actor_colour: str, action_desc: str, position: tuple, radius: float = 600):
+        """Broadcast an event to all AI players within range."""
+        # Visual range check (plus maybe earshot)
+        for ai in self.ai_players:
+            if not ai.alive_status: continue
+            if ai.bot_colour == actor_colour: continue # Don't tell ourselves
+            
+            dist = self.pathfinder.distance_between((ai.pos.x, ai.pos.y), position)
+            if dist <= radius:
+                # Add to memory
+                if hasattr(ai, 'memory') and ai.memory:
+                    # Check visibility (line of sight) - optional, but good for realism
+                    # For now, simplistic radius is fine for "hearing/seeing"
+                    ai.memory.add_event(f"Examples: Saw {actor_colour} {action_desc}")
+                    # Also log to console for debug
+                    print(f"[{ai.bot_colour}] Observed {actor_colour} {action_desc}")
 
     def _get_game_state_snapshot(self) -> GameStateSnapshot:
         """Create a frozen snapshot of the game state for AI consumption."""

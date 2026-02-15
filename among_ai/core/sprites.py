@@ -215,6 +215,12 @@ class AIPlayer(pg.sprite.Sprite):
         self._idle_until = 0.0
         self._task_just_completed = False
 
+        # Individual kill cooldown
+        self.kill_timer = 20.0
+        
+        # Debug: reasoning text from last decision
+        self.last_reasoning = ""
+
     def set_ai_components(self, brain, memory, movement_ctrl):
         """Inject AI components after construction."""
         self.brain = brain
@@ -259,14 +265,73 @@ class AIPlayer(pg.sprite.Sprite):
 
         # Update movement from movement controller
         if self.movement_ctrl and not self.is_doing_task:
-            vel, direction = self.movement_ctrl.get_velocity_and_direction()
+            vel, direction = self.movement_ctrl.get_velocity_and_direction((self.pos.x, self.pos.y))
             self.vel = vec(vel[0], vel[1])
             if direction:
                 self._update_animation(direction)
         elif self.is_doing_task:
             self.vel = vec(0, 0)
+            
+        # Update path tracker
+        if self.movement_ctrl:
+            self.movement_ctrl.update_position((self.pos.x, self.pos.y))
 
         self._apply_movement()
+
+        # Update kill timer
+        if hasattr(self, 'kill_timer') and self.kill_timer > 0:
+            self.kill_timer -= self.game.dt
+            
+        # Check for urgent vision events (bodies) every few frames
+        # Only check every 10 frames to save performance
+        if self.game.frame_count % 10 == 0:
+            self._check_vision_events()
+
+    def _check_vision_events(self):
+        """Passive vision check for high-priority events (bodies)."""
+        # Simple distance check for bodies
+        if not self.alive_status: 
+            return
+            
+        # Don't interrupt if already reporting/meeting
+        if self.game.meeting_manager.is_active:
+            return
+
+        vision_radius = self.game.config.ai.vision_radius
+        
+        # Check bodies
+        for body in self.game.dead_bodies:
+            # Skip if already reported
+            if body.reported:
+                continue
+
+            # Calculate distance
+            dx = body.pos.x - self.pos.x
+            dy = body.pos.y - self.pos.y
+            dist = (dx*dx + dy*dy)**0.5
+            
+            # If body is close
+            if dist < vision_radius:
+                # Force an interrupt!
+                # If we are NOT already going to report it
+                if self.current_action and self.current_action.action == "REPORT_BODY":
+                    continue
+                    
+                # Store that we saw a body to memory immediately
+                if self.memory:
+                    self.memory.add_event(f"Saw dead body of {body.player_colour}!")
+                
+                # Stop current movement/task
+                self.action_queue.clear()
+                self.current_action = None
+                if self.movement_ctrl:
+                    self.movement_ctrl.stop()
+                self.is_doing_task = False
+                
+                # Force immediate re-decision
+                self.last_decision_time = 0
+                print(f"[{self.bot_colour}] SAW BODY! Interrupting task.")
+                break
 
     def _apply_movement(self):
         """Apply velocity, check collisions."""

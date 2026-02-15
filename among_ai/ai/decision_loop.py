@@ -68,6 +68,19 @@ class DecisionLoop:
                 continue
             if player.brain is None:
                 continue
+
+            # Goal Persistence: If player is busy moving or doing a task, skip decision
+            # UNLESS they have been idle too long or caught in a loop
+            # Or if checking for urgent events happened in update() and reset last_decision_time
+            if player.movement_ctrl and player.movement_ctrl.is_moving:
+                # If moving, only interrupt if it's been a LONG time (stuck?)
+                if now - player.last_decision_time < 10.0:
+                    continue
+            
+            if player.is_doing_task:
+                 if now - player.last_decision_time < 5.0:
+                    continue
+
             if now - player.last_decision_time >= self.decision_interval:
                 pending.append(player)
 
@@ -134,6 +147,11 @@ class DecisionLoop:
         completed_tasks = player.completed_task_names
         assigned_tasks = [t.name for t in player.assigned_tasks]
 
+        # Get AI's individual kill cooldown if available
+        kill_cd = base_state.kill_cooldown_remaining
+        if hasattr(player, 'kill_timer'):
+            kill_cd = player.kill_timer
+
         return GameStateSnapshot(
             game_time=base_state.game_time,
             phase=base_state.phase,
@@ -147,7 +165,7 @@ class DecisionLoop:
             my_tasks_total=len(assigned_tasks),
             my_assigned_tasks=assigned_tasks,
             my_completed_tasks=completed_tasks,
-            kill_cooldown_remaining=base_state.kill_cooldown_remaining,
+            kill_cooldown_remaining=kill_cd,
             sabotage_cooldown_remaining=base_state.sabotage_cooldown_remaining,
             meeting_cooldown_remaining=base_state.meeting_cooldown_remaining,
             can_call_meeting=base_state.can_call_meeting,

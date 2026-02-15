@@ -62,13 +62,18 @@ class PromptBuilder:
             if game_state.reactor_countdown:
                 lines.append(f"Reactor meltdown in: {game_state.reactor_countdown}s!")
 
-        # Nearby players
-        lines.append("\n--- WHAT YOU SEE ---")
+        # Visible players
+        visible_text = "None"
         if game_state.visible_players:
+            # Add distance info
+            visible_entries = []
             for vp in game_state.visible_players:
-                lines.append(f"  {vp.colour} in {vp.room} ({int(getattr(vp, 'distance', 0))} units away)")
-        else:
-            lines.append("  No players nearby")
+                visible_entries.append(f"- {vp.colour} in {vp.room} ({int(getattr(vp, 'distance', 0))} units away)")
+            visible_text = "\n".join(visible_entries)
+            
+        lines.append("\n--- WHAT YOU SEE ---")
+        lines.append(f"VISIBLE PLAYERS (Who you can see RIGHT NOW):\n{visible_text}")
+        lines.append("(If this list is not 'None', you are NOT alone. You can see these players.)")
 
         # Visible bodies
         if game_state.visible_bodies:

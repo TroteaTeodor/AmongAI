@@ -14,6 +14,12 @@ except ImportError as e:
     input("Press Enter to exit...")
     sys.exit(1)
 
+import argparse
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 from among_ai.config import Config
 from among_ai.core.game_engine import GameEngine
 
@@ -28,7 +34,7 @@ def main():
         return
 
     try:
-        config = Config.load(config_path)
+        config = Config(config_path)
     except Exception as e:
         print(f"Error loading config: {e}")
         return
