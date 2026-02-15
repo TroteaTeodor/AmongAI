@@ -1,0 +1,172 @@
+game:
+  mode: "watch_ai"            # "watch_ai", "play_with_ai", "chat_mode"
+  num_players: 10
+  num_impostors: 2
+  discussion_time: 30
+  voting_time: 30
+  kill_cooldown: 15
+  sabotage_cooldown: 15
+  task_count: 8
+  game_speed: 1.0
+
+ai:
+  decision_interval: 3.0
+  vision_radius: 500
+  vision_radius_dark: 150
+  fallback_enabled: true
+  llm_timeout: 6.0
+  max_concurrent_calls: 3
+  task_duration_min: 3.0      # Min seconds to complete a task
+  task_duration_max: 8.0      # Max seconds to complete a task
+  idle_after_task_min: 1.0    # Min idle time after finishing a task
+  idle_after_task_max: 3.0    # Max idle time after finishing a task
+
+  default_provider: "anthropic"
+  default_model: "claude-sonnet-4-5-20250929"
+
+providers:
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY}"
+    model: "claude-sonnet-4-5-20250929"
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+    model: "gpt-4o-mini"
+  google:
+    api_key: "${GOOGLE_API_KEY}"
+    model: "gemini-2.0-flash"
+  groq:
+    api_key: "${GROQ_API_KEY}"
+    model: "llama-3.1-70b-versatile"
+  together:
+    api_key: "${TOGETHER_API_KEY}"
+    model: "meta-llama/Llama-3-70b-chat-hf"
+  mistral:
+    api_key: "${MISTRAL_API_KEY}"
+    model: "mistral-small-latest"
+  deepseek:
+    api_key: "${DEEPSEEK_API_KEY}"
+    model: "deepseek-chat"
+  cohere:
+    api_key: "${COHERE_API_KEY}"
+    model: "command-r"
+
+players:
+  - colour: "Red"
+    provider: "anthropic"
+    personality:
+      name: "Commander"
+      aggression: 0.6
+      suspicion_tendency: 0.7
+      chattiness: 0.8
+      cooperation: 0.5
+      deception_skill: 0.7
+      risk_tolerance: 0.6
+      speaking_style: "Direct and authoritative. Uses short declarative sentences."
+
+  - colour: "Blue"
+    provider: "openai"
+    personality:
+      name: "Detective"
+      aggression: 0.3
+      suspicion_tendency: 0.9
+      chattiness: 0.7
+      cooperation: 0.8
+      deception_skill: 0.4
+      risk_tolerance: 0.3
+      speaking_style: "Analytical and methodical. Often asks probing questions."
+
+  - colour: "Orange"
+    provider: "google"
+    personality:
+      name: "Socialite"
+      aggression: 0.4
+      suspicion_tendency: 0.5
+      chattiness: 0.9
+      cooperation: 0.7
+      deception_skill: 0.6
+      risk_tolerance: 0.5
+      speaking_style: "Friendly and chatty. Tries to build consensus."
+
+  - colour: "Yellow"
+    provider: "groq"
+    personality:
+      name: "Strategist"
+      aggression: 0.5
+      suspicion_tendency: 0.8
+      chattiness: 0.5
+      cooperation: 0.6
+      deception_skill: 0.8
+      risk_tolerance: 0.7
+      speaking_style: "Calculated and precise. Uses game theory logic."
+
+  - colour: "Green"
+    provider: "mistral"
+    personality:
+      name: "Trickster"
+      aggression: 0.7
+      suspicion_tendency: 0.4
+      chattiness: 0.6
+      cooperation: 0.3
+      deception_skill: 0.9
+      risk_tolerance: 0.8
+      speaking_style: "Deflects suspicion with humor and misdirection."
+
+  - colour: "Black"
+    provider: "deepseek"
+    personality:
+      name: "Shadow"
+      aggression: 0.8
+      suspicion_tendency: 0.6
+      chattiness: 0.3
+      cooperation: 0.4
+      deception_skill: 0.7
+      risk_tolerance: 0.9
+      speaking_style: "Quiet and observant. Speaks only when necessary."
+
+  - colour: "Brown"
+    provider: "cohere"
+    personality:
+      name: "Diplomat"
+      aggression: 0.2
+      suspicion_tendency: 0.5
+      chattiness: 0.7
+      cooperation: 0.9
+      deception_skill: 0.3
+      risk_tolerance: 0.2
+      speaking_style: "Calm and diplomatic. Tries to find middle ground."
+
+  - colour: "Pink"
+    provider: "anthropic"
+    personality:
+      name: "Wildcard"
+      aggression: 0.5
+      suspicion_tendency: 0.6
+      chattiness: 0.8
+      cooperation: 0.5
+      deception_skill: 0.5
+      risk_tolerance: 0.5
+      speaking_style: "Unpredictable and expressive. Changes tactics often."
+
+  - colour: "Purple"
+    provider: "openai"
+    personality:
+      name: "Scholar"
+      aggression: 0.3
+      suspicion_tendency: 0.7
+      chattiness: 0.6
+      cooperation: 0.7
+      deception_skill: 0.5
+      risk_tolerance: 0.4
+      speaking_style: "Intellectual and thorough. Cites evidence carefully."
+
+  - colour: "White"
+    provider: "google"
+    personality:
+      name: "Innocent"
+      aggression: 0.2
+      suspicion_tendency: 0.3
+      chattiness: 0.9
+      cooperation: 0.8
+      deception_skill: 0.6
+      risk_tolerance: 0.3
+      speaking_style: "Naive-sounding but perceptive. Often plays the underdog."
