@@ -125,7 +125,7 @@ class NavGraph(IPathfinder):
             # Try to skip as far ahead as possible with clear line of sight
             best = i + 1
             for j in range(len(path) - 1, i + 1, -1):
-                if self._has_line_of_sight(smoothed[-1], path[j]):
+                if self.has_line_of_sight(smoothed[-1], path[j]):
                     best = j
                     break
             smoothed.append(path[best])
@@ -133,7 +133,7 @@ class NavGraph(IPathfinder):
 
         return smoothed
 
-    def _has_line_of_sight(self, a, b):
+    def has_line_of_sight(self, a, b):
         """Check if a straight line between two world points crosses any blocked cells."""
         # Bresenham-style walk along the grid
         ax, ay = self._world_to_grid(a[0], a[1])

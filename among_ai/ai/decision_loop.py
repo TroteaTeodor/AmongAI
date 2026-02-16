@@ -6,7 +6,7 @@ import threading
 import time
 from typing import Optional, Callable
 
-from among_ai.ai.interfaces import GameStateSnapshot, AIAction
+from among_ai.ai.interfaces import GameStateSnapshot, AIAction, AIDecision
 
 
 class DecisionLoop:
@@ -69,16 +69,19 @@ class DecisionLoop:
             if player.brain is None:
                 continue
 
-            # Goal Persistence: If player is busy moving or doing a task, skip decision
-            # UNLESS they have been idle too long or caught in a loop
-            # Or if checking for urgent events happened in update() and reset last_decision_time
+            # Intent-aware scheduling: if player has an active intent and is
+            # still moving toward it, extend the skip window to reduce LLM calls
+            has_active_intent = (hasattr(player, 'current_intent')
+                                 and player.current_intent is not None)
+
             if player.movement_ctrl and player.movement_ctrl.is_moving:
-                # If moving, only interrupt if it's been a LONG time (stuck?)
-                if now - player.last_decision_time < 10.0:
+                # If moving with an intent, allow longer uninterrupted travel
+                skip_time = 15.0 if has_active_intent else 10.0
+                if now - player.last_decision_time < skip_time:
                     continue
-            
+
             if player.is_doing_task:
-                 if now - player.last_decision_time < 5.0:
+                if now - player.last_decision_time < 5.0:
                     continue
 
             if now - player.last_decision_time >= self.decision_interval:
@@ -103,6 +106,10 @@ class DecisionLoop:
             player.action_queue.append(decision)
             player.last_decision_time = time.time()
 
+            # Update persistent intent from decision
+            if hasattr(player, 'current_intent'):
+                player.current_intent = self._decision_to_intent(decision)
+
         except asyncio.TimeoutError:
             print(f"[{player.bot_colour}] Decision timeout, using fallback")
             fallback = player.brain.get_fallback_action(
@@ -126,22 +133,36 @@ class DecisionLoop:
             if pf:
                 my_room = pf.get_room_at((player.pos.x, player.pos.y))
 
-        # Get memory summary
+        # Get memory summary (with current room for location reinforcement)
         memory_summary = ""
         if player.memory:
-            memory_summary = player.memory.summarize_for_prompt()
+            memory_summary = player.memory.summarize_for_prompt(
+                current_room=my_room
+            )
 
         # Determine visible players/bodies via vision
+        # Convert PlayerSnapshot objects to dicts for Vision module
         visible_players = []
         visible_bodies = []
         if hasattr(player, 'vision') and player.vision:
+            all_player_dicts = [
+                {"colour": p.colour, "position": p.position,
+                 "alive": p.alive, "room": p.room}
+                for p in base_state.all_players
+            ]
+            dead_body_dicts = [
+                {"colour": p.colour, "position": p.position,
+                 "reported": p.reported}
+                for p in base_state.all_players if not p.alive
+            ]
+            pf = player.game.pathfinder if hasattr(player.game, 'pathfinder') else None
             visible_players, visible_bodies = player.vision.scan_and_record(
                 (player.pos.x, player.pos.y),
-                base_state.all_players if hasattr(base_state, '_raw_players') else [],
-                base_state.visible_bodies if hasattr(base_state, '_raw_bodies') else [],
+                all_player_dicts,
+                dead_body_dicts,
                 base_state.sabotage_active == "lights",
                 player.memory,
-                player.game.pathfinder if hasattr(player.game, 'pathfinder') else None,
+                pf,
             )
 
         completed_tasks = player.completed_task_names
@@ -151,6 +172,12 @@ class DecisionLoop:
         kill_cd = base_state.kill_cooldown_remaining
         if hasattr(player, 'kill_timer'):
             kill_cd = player.kill_timer
+
+        # Build current intent summary for prompt context
+        intent_summary = ""
+        if hasattr(player, 'current_intent') and player.current_intent is not None:
+            intent = player.current_intent
+            intent_summary = str(intent)
 
         return GameStateSnapshot(
             game_time=base_state.game_time,
@@ -191,6 +218,7 @@ class DecisionLoop:
                 ) for b in (visible_bodies if isinstance(visible_bodies, list) else [])
             ],
             all_players=base_state.all_players,
+            current_intent_summary=intent_summary,
             memory_summary=memory_summary,
             chat_history=base_state.chat_history,
         )
@@ -206,6 +234,38 @@ class DecisionLoop:
             if math.sqrt((pos.x - vx)**2 + (pos.y - vy)**2) <= 100:
                 return True
         return False
+
+    @staticmethod
+    def _decision_to_intent(decision: AIDecision):
+        """Convert an AIDecision into an Intent for persistence tracking."""
+        try:
+            from among_ai.ai.intent_system import Intent, IntentType
+        except ImportError:
+            return None
+
+        mapping = {
+            AIAction.DO_TASK: IntentType.DO_TASK,
+            AIAction.MOVE_TO_ROOM: IntentType.PATROL,
+            AIAction.KILL: IntentType.HUNT,
+            AIAction.FOLLOW_PLAYER: IntentType.FOLLOW,
+            AIAction.SABOTAGE_LIGHTS: IntentType.SABOTAGE,
+            AIAction.SABOTAGE_REACTOR: IntentType.SABOTAGE,
+            AIAction.IDLE: IntentType.IDLE,
+        }
+        intent_type = mapping.get(decision.action)
+        if intent_type is None:
+            return None
+
+        import time
+        return Intent(
+            intent_type=intent_type,
+            target_room=decision.target_room,
+            target_task=decision.target_task,
+            target_player=decision.target_player,
+            reasoning=decision.reasoning[:120],
+            created_at=time.time(),
+            expires_at=time.time() + 30.0,
+        )
 
     async def run_meeting_discussion(self, game_state, meeting_manager):
         """Run structured AI discussion during a meeting.

@@ -87,3 +87,13 @@ class BaseProvider(ILLMProvider):
             elif msg["role"] == "user":
                 user = msg["content"]
         return await self._call_api(system, user, temperature, max_tokens, stop_sequences)
+
+    async def generate_stream_with_messages(self, messages: list[dict],
+                                             temperature: float = 0.7,
+                                             max_tokens: int = 300):
+        """Stream tokens from the LLM. Default: yields the full response as one chunk.
+        Override in subclasses for real streaming."""
+        response = await self.generate_with_messages(
+            messages=messages, temperature=temperature, max_tokens=max_tokens
+        )
+        yield response.text

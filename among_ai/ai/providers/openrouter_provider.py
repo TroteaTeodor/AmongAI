@@ -56,3 +56,21 @@ class OpenRouterProvider(BaseProvider):
             completion_tokens=usage.completion_tokens if usage else 0,
             latency_ms=0,
         )
+
+    async def generate_stream_with_messages(self, messages: list[dict],
+                                             temperature: float = 0.7,
+                                             max_tokens: int = 300):
+        """Stream tokens using OpenAI-compatible streaming API."""
+        client = self._get_client()
+        kwargs = {
+            "model": self._model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": messages,
+            "stream": True,
+        }
+
+        stream = await client.chat.completions.create(**kwargs)
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content

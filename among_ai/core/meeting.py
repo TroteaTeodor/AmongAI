@@ -24,6 +24,7 @@ class MeetingManager:
         self.voting_time = voting_time
         self.caller_colour: Optional[str] = None
         self.body_colour: Optional[str] = None  # If reported body
+        self.body_location: Optional[str] = None  # Room where body was found
         self.is_report: bool = False
 
         self._phase_start = 0.0
@@ -42,10 +43,12 @@ class MeetingManager:
     def is_active(self) -> bool:
         return self.phase != MeetingPhase.NONE
 
-    def start_meeting(self, caller_colour: str, body_colour: Optional[str] = None):
+    def start_meeting(self, caller_colour: str, body_colour: Optional[str] = None,
+                       body_location: Optional[str] = None):
         """Trigger an emergency meeting."""
         self.caller_colour = caller_colour
         self.body_colour = body_colour
+        self.body_location = body_location
         self.is_report = body_colour is not None
         self.phase = MeetingPhase.ALERT
         self._phase_start = time.time()
@@ -161,6 +164,7 @@ class MeetingManager:
         self.phase = MeetingPhase.NONE
         self.caller_colour = None
         self.body_colour = None
+        self.body_location = None
         self.is_report = False
         self.votes = {}
         self.ejected_colour = None

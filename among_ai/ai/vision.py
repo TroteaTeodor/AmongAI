@@ -17,8 +17,9 @@ class Vision:
     def get_vision_radius(self, lights_sabotaged: bool) -> float:
         return self.dark_radius if lights_sabotaged else self.normal_radius
 
-    def get_visible_players(self, my_pos, all_players, lights_sabotaged: bool) -> list:
-        """Return list of player data dicts that are within vision range."""
+    def get_visible_players(self, my_pos, all_players, lights_sabotaged: bool,
+                            pathfinder=None) -> list:
+        """Return list of player data dicts that are within vision range and LOS."""
         radius = self.get_vision_radius(lights_sabotaged)
         visible = []
         mx, my = my_pos
@@ -30,11 +31,16 @@ class Vision:
             px, py = player["position"]
             dist = math.sqrt((mx - px) ** 2 + (my - py) ** 2)
             if dist <= radius:
+                # Wall occlusion: check line of sight through nav grid
+                if pathfinder and hasattr(pathfinder, 'has_line_of_sight'):
+                    if not pathfinder.has_line_of_sight(my_pos, (px, py)):
+                        continue
                 visible.append({**player, "distance": dist})
         return visible
 
-    def get_visible_bodies(self, my_pos, dead_players, lights_sabotaged: bool) -> list:
-        """Return dead bodies within vision range."""
+    def get_visible_bodies(self, my_pos, dead_players, lights_sabotaged: bool,
+                           pathfinder=None) -> list:
+        """Return dead bodies within vision range and LOS."""
         radius = self.get_vision_radius(lights_sabotaged)
         visible = []
         mx, my = my_pos
@@ -44,6 +50,10 @@ class Vision:
             px, py = body["position"]
             dist = math.sqrt((mx - px) ** 2 + (my - py) ** 2)
             if dist <= radius:
+                # Wall occlusion: check line of sight through nav grid
+                if pathfinder and hasattr(pathfinder, 'has_line_of_sight'):
+                    if not pathfinder.has_line_of_sight(my_pos, (px, py)):
+                        continue
                 visible.append({**body, "distance": dist})
         return visible
 
@@ -53,8 +63,8 @@ class Vision:
 
         Returns (visible_players, visible_bodies) for game state snapshot.
         """
-        visible_players = self.get_visible_players(my_pos, all_players, lights_sabotaged)
-        visible_bodies = self.get_visible_bodies(my_pos, dead_players, lights_sabotaged)
+        visible_players = self.get_visible_players(my_pos, all_players, lights_sabotaged, pathfinder)
+        visible_bodies = self.get_visible_bodies(my_pos, dead_players, lights_sabotaged, pathfinder)
 
         now = time.time()
         my_room = pathfinder.get_room_at(my_pos) if pathfinder else "Unknown"

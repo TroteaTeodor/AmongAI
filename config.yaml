@@ -1,8 +1,8 @@
 game:
   mode: "watch_ai"            # "watch_ai", "play_with_ai", "chat_mode"
   num_players: 9
-  num_impostors: 1
-  discussion_time: 120
+  num_impostors: 2
+  discussion_time: 60
   voting_time: 30
   kill_cooldown: 30
   sabotage_cooldown: 45
@@ -22,6 +22,8 @@ ai:
 
   default_provider: "openrouter"
   default_model: "google/gemini-2.0-flash-001"
+  early_game_grace_period: 30.0  # Seconds before impostor can opportunistic-kill
+  reflex_check_interval: 10     # Frames between reflex evaluations
 
 providers:
   openrouter:

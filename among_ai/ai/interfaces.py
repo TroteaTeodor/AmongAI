@@ -60,6 +60,7 @@ class PlayerSnapshot:
     is_impostor: bool = False  # Only set for the requesting AI's own snapshot
     tasks_completed: int = 0
     is_visible: bool = True
+    reported: bool = False
 
 
 @dataclass
@@ -93,10 +94,17 @@ class GameStateSnapshot:
     visible_bodies: list = field(default_factory=list)
     all_players: list = field(default_factory=list)
 
+    # Current intent (for prompt context)
+    current_intent_summary: str = ""
+
     # Memory (pre-serialized)
     memory_summary: str = ""
 
     # Meeting info
+    meeting_trigger: str = ""           # "report", "button", or ""
+    meeting_caller: str = ""            # Colour of who called the meeting
+    meeting_body_colour: str = ""       # Colour of reported body (if report)
+    meeting_body_location: str = ""     # Room where body was found (if report)
     chat_history: Optional[list] = None
     accusation_summary: Optional[str] = None
 

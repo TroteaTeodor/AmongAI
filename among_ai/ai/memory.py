@@ -68,9 +68,16 @@ class Memory(IMemory):
     def get_known_player_locations(self) -> dict:
         return dict(self.last_known_locations)
 
-    def summarize_for_prompt(self, max_tokens: int = 500) -> str:
+    def summarize_for_prompt(self, max_tokens: int = 500,
+                             current_room: str = "") -> str:
         """Generate a text summary of recent events, sightings, and suspicions."""
         lines = []
+
+        # Reinforce current location at top of memory
+        if current_room:
+            lines.append(f"YOUR CURRENT LOCATION: {current_room}")
+            lines.append("")
+
         now = time.time()
         recent = self.get_recent_events(12)
         for event in reversed(recent):

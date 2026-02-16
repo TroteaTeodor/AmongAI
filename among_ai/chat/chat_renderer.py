@@ -103,26 +103,35 @@ class ChatRenderer:
                 chat_surface.blit(name_surf, (22, y))
 
             # Message text (word wrap)
-            msg_x = 22 + name_surf.get_width() + 8
-            max_width = self._chat_area.width - msg_x - self._padding
+            # First line starts after speaker name; continuation lines
+            # wrap to a small indent so they use the full width.
+            first_line_x = 22 + name_surf.get_width() + 8
+            wrap_x = 32  # continuation indent
+            current_x = first_line_x
+            max_first = self._chat_area.width - first_line_x - self._padding
+            max_wrap = self._chat_area.width - wrap_x - self._padding
 
             words = text.split()
             line = ""
+            max_width = max_first
             for word in words:
                 test = line + " " + word if line else word
-                test_surf = self.font.render(test, True, (220, 220, 230))
-                if test_surf.get_width() > max_width and line:
+                test_w = self.font.size(test)[0]
+                if test_w > max_width and line:
                     if -self._line_height < y < self._chat_area.height:
                         line_surf = self.font.render(line, True, (220, 220, 230))
-                        chat_surface.blit(line_surf, (msg_x, y))
+                        chat_surface.blit(line_surf, (current_x, y))
                     y += self._line_height
+                    # After the first rendered line, use the smaller indent
+                    current_x = wrap_x
+                    max_width = max_wrap
                     line = word
                 else:
                     line = test
             if line:
                 if -self._line_height < y < self._chat_area.height:
                     line_surf = self.font.render(line, True, (220, 220, 230))
-                    chat_surface.blit(line_surf, (msg_x, y))
+                    chat_surface.blit(line_surf, (current_x, y))
 
             y += self._line_height + 6
 

@@ -109,6 +109,12 @@ class PromptBuilder:
         elif game_state.meeting_cooldown_remaining > 0:
             lines.append(f"Meeting cooldown: {int(game_state.meeting_cooldown_remaining)}s")
 
+        # Current intent/goal
+        if game_state.current_intent_summary:
+            lines.append(f"\n--- CURRENT GOAL ---")
+            lines.append(f"Current goal: {game_state.current_intent_summary}")
+            lines.append("(You can continue this goal or choose a new one.)")
+
         # Memory
         if game_state.memory_summary:
             lines.append(f"\n--- MEMORY ---\n{game_state.memory_summary}")
@@ -157,6 +163,19 @@ class PromptBuilder:
         """Build prompt for generating a chat message during meetings."""
         lines = ["=== EMERGENCY MEETING ==="]
         lines.append(f"You are: {game_state.my_colour} ({game_state.my_role})")
+        lines.append(f"You were in: {game_state.my_room} when the meeting was called")
+
+        # Meeting trigger context
+        if game_state.meeting_trigger == "report":
+            lines.append(f"Meeting reason: {game_state.meeting_caller} REPORTED a dead body")
+            if game_state.meeting_body_colour:
+                lines.append(f"Victim: {game_state.meeting_body_colour}")
+            if game_state.meeting_body_location:
+                lines.append(f"Body found in: {game_state.meeting_body_location}")
+        elif game_state.meeting_trigger == "button":
+            lines.append(f"Meeting reason: {game_state.meeting_caller} pressed the EMERGENCY BUTTON")
+        else:
+            lines.append("Meeting reason: Unknown")
 
         alive = [p.colour for p in game_state.all_players if p.alive]
         dead = [p.colour for p in game_state.all_players if not p.alive]
@@ -176,7 +195,8 @@ class PromptBuilder:
         if game_state.my_role == "impostor":
             lines.append(
                 "\nRemember: You are the IMPOSTOR. Deflect suspicion. "
-                "Accuse someone else if needed. Don't reveal yourself."
+                "Accuse someone else if needed. Don't reveal yourself. "
+                "Be careful about self-reporting bodies you killed — it can look suspicious."
             )
         else:
             lines.append(
@@ -196,6 +216,16 @@ class PromptBuilder:
         lines = ["=== VOTING TIME ==="]
         lines.append(f"You are: {game_state.my_colour} ({game_state.my_role})")
         lines.append(f"Alive players: {', '.join(alive_players)}")
+
+        # Meeting trigger context
+        if game_state.meeting_trigger == "report":
+            lines.append(f"This meeting was called because {game_state.meeting_caller} reported a body.")
+            if game_state.meeting_body_colour:
+                lines.append(f"Victim: {game_state.meeting_body_colour}")
+            if game_state.meeting_body_location:
+                lines.append(f"Body was found in: {game_state.meeting_body_location}")
+        elif game_state.meeting_trigger == "button":
+            lines.append(f"This meeting was called by {game_state.meeting_caller} using the emergency button.")
 
         if chat_history:
             lines.append("\n--- DISCUSSION SUMMARY ---")

@@ -545,13 +545,9 @@ class GameEngine:
         # Use individual kill timer
         if not ai.imposter:
             return
-            
+
         if hasattr(ai, 'kill_timer') and ai.kill_timer > 0:
             return
-            
-        # Also check global cooldown as a backup (optional, but good for safety)
-        # if not self.timers.is_ready('kill_cooldown'):
-        #    return
 
         target = None
         for other in self.ai_players:
@@ -562,6 +558,28 @@ class GameEngine:
                 if dist <= 250:  # Kill range - generous to match LLM's "nearby" perception
                     target = other
                     break
+
+        if not target:
+            return
+
+        # Witness check: count players who have LOS to the kill location
+        kill_pos = (ai.pos.x, ai.pos.y)
+        witnesses = 0
+        for other in self.ai_players:
+            if other is ai or other is target or not other.alive_status:
+                continue
+            dist = self.pathfinder.distance_between(
+                (other.pos.x, other.pos.y), kill_pos
+            )
+            if dist <= 500:  # Within vision range
+                if self.pathfinder.has_line_of_sight(
+                    (other.pos.x, other.pos.y), kill_pos
+                ):
+                    witnesses += 1
+
+        if witnesses >= 2:
+            print(f"[{ai.bot_colour}] Kill aborted: {witnesses} witnesses with LOS")
+            return
 
         if target:
             target.kill_target()
@@ -581,11 +599,34 @@ class GameEngine:
                     (ai.pos.x, ai.pos.y), (other.pos.x, other.pos.y)
                 )
                 if dist <= 300:
+                    body_room = self.pathfinder.get_room_at(
+                        (other.pos.x, other.pos.y)
+                    )
                     other.got_reported = True
                     self.sound_manager.play_effect('dead_body_found')
-                    self._log_event(f"{ai.bot_colour} reported {other.bot_colour}'s body!")
+                    self._log_event(
+                        f"{ai.bot_colour} reported {other.bot_colour}'s body in {body_room}!"
+                    )
+
+                    # Record to reporter's memory so they know the details
+                    if ai.memory:
+                        from among_ai.ai.interfaces import MemoryEvent
+                        ai.memory.record_event(MemoryEvent(
+                            timestamp=time.time(),
+                            event_type="reported_body",
+                            location=body_room,
+                            actors=[other.bot_colour],
+                            description=(
+                                f"I reported {other.bot_colour}'s body "
+                                f"in {body_room}!"
+                            ),
+                            importance=1.0,
+                        ))
+
                     self.meeting_manager.start_meeting(
-                        ai.bot_colour, body_colour=other.bot_colour
+                        ai.bot_colour,
+                        body_colour=other.bot_colour,
+                        body_location=body_room,
                     )
                     self.decision_loop.meeting_active = True
                     break
@@ -657,9 +698,30 @@ class GameEngine:
         self.sound_manager.play_effect('crises_alarm')
         self._log_event("REACTOR SABOTAGED! Meltdown imminent!")
 
+    def _hide_dead_bodies(self):
+        """Remove all dead player sprites from the visible map."""
+        for ai in self.ai_players:
+            if not ai.alive_status:
+                ai.got_reported = True  # Mark reported so vision ignores them
+                if self.invisible_player_image:
+                    ai.image = self.invisible_player_image
+
     def _handle_meeting_phase_change(self, new_phase: MeetingPhase):
         """Handle transitions between meeting phases."""
         if new_phase == MeetingPhase.DISCUSSION:
+            # Clean up ALL dead bodies as soon as the meeting starts —
+            # everyone sees who's alive/dead in the meeting UI
+            self._hide_dead_bodies()
+
+            # Stop all player movement and clear action queues
+            for ai in self.ai_players:
+                if ai.movement_ctrl:
+                    ai.movement_ctrl.stop()
+                ai.action_queue.clear()
+                ai.current_action = None
+                ai.is_doing_task = False
+                ai.active_reflex = None
+
             self.chat_log.start_new_meeting()
             # Trigger async discussion in decision loop
             import asyncio
@@ -698,7 +760,9 @@ class GameEngine:
                 for ai in self.ai_players:
                     if ai.bot_colour == ejected:
                         ai.alive_status = False
-                        ai.image = self.invisible_player_image or ai.image
+                        # Remove ejected player from visible sprite groups
+                        if self.invisible_player_image:
+                            ai.image = self.invisible_player_image
                         role = "IMPOSTOR" if ai.imposter else "Crewmate"
                         self._log_event(f"{ejected} was ejected! They were {role}.")
                         break
@@ -867,23 +931,33 @@ class GameEngine:
             # Debug: Reasoning Overlay — only show when NOT in a meeting
             if not self.emergency and hasattr(self.player, 'last_reasoning') and self.player.last_reasoning:
                 reasoning = self.player.last_reasoning
-                # Word wrap at 60 chars
-                words = reasoning.split(' ')
-                lines = []
-                current_line = []
-                for word in words:
-                    current_line.append(word)
-                    if len(' '.join(current_line)) > 60:
-                        lines.append(' '.join(current_line[:-1]))
-                        current_line = [word]
-                if current_line:
-                    lines.append(' '.join(current_line))
-                lines = lines[:6]
 
                 start_y = 110
                 box_w = 420
+                text_pad = 8
+                max_text_w = box_w - text_pad * 2
                 header_h = 22
-                box_h = header_h + len(lines) * 20 + 12
+                line_h = 18
+
+                # Pixel-based word wrap: split on newlines first, then words
+                lines = []
+                for paragraph in reasoning.split('\n'):
+                    words = paragraph.split()
+                    if not words:
+                        lines.append("")
+                        continue
+                    current = words[0]
+                    for word in words[1:]:
+                        test = current + " " + word
+                        if small.size(test)[0] > max_text_w:
+                            lines.append(current)
+                            current = word
+                        else:
+                            current = test
+                    lines.append(current)
+                lines = lines[:8]
+
+                box_h = header_h + len(lines) * line_h + 12
 
                 # Background
                 bg = pg.Surface((box_w, box_h), pg.SRCALPHA)
@@ -896,7 +970,7 @@ class GameEngine:
                 pg.draw.rect(self.screen, player_colour_rgb,
                            (8, start_y, box_w, header_h))
                 header = small.render(
-                    f"💭 {self.player.bot_colour}'s Thoughts",
+                    f"[{self.player.bot_colour}] Thoughts",
                     True, (0, 0, 0))
                 self.screen.blit(header, (14, start_y + 3))
 
@@ -907,7 +981,7 @@ class GameEngine:
                 # Text lines
                 for i, line in enumerate(lines):
                     r_text = small.render(line, True, (230, 230, 200))
-                    self.screen.blit(r_text, (16, start_y + header_h + 6 + i * 20))
+                    self.screen.blit(r_text, (8 + text_pad, start_y + header_h + 6 + i * line_h))
         
         # Task progress bar
         crew = [p.bot_colour for p in self.ai_players if not p.imposter]
@@ -1044,6 +1118,7 @@ class GameEngine:
                 alive=ai.alive_status,
                 is_impostor=False,  # Never leak impostor identity in shared snapshot
                 tasks_completed=ai.tasks_completed,
+                reported=ai.got_reported,
             ))
 
         sabotage = None
@@ -1060,6 +1135,20 @@ class GameEngine:
         if self.meeting_manager.is_active:
             phase = self.meeting_manager.phase.value
 
+        # Meeting context
+        meeting_trigger = ""
+        meeting_caller = ""
+        meeting_body_colour = ""
+        meeting_body_location = ""
+        if self.meeting_manager.is_active:
+            meeting_caller = self.meeting_manager.caller_colour or ""
+            if self.meeting_manager.is_report:
+                meeting_trigger = "report"
+                meeting_body_colour = self.meeting_manager.body_colour or ""
+                meeting_body_location = self.meeting_manager.body_location or ""
+            else:
+                meeting_trigger = "button"
+
         return GameStateSnapshot(
             game_time=time.time() - self.start_time,
             phase=phase,
@@ -1070,6 +1159,10 @@ class GameEngine:
             sabotage_cooldown_remaining=self.timers.remaining('sabotage_cooldown'),
             meeting_cooldown_remaining=self.timers.remaining('meeting_cooldown'),
             can_call_meeting=self.timers.is_ready('meeting_cooldown'),
+            meeting_trigger=meeting_trigger,
+            meeting_caller=meeting_caller,
+            meeting_body_colour=meeting_body_colour,
+            meeting_body_location=meeting_body_location,
             chat_history=self.meeting_manager.chat_messages
             if self.meeting_manager.is_active else None,
         )

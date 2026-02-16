@@ -53,6 +53,8 @@ class AIConfig:
     idle_after_task_max: float = 3.0
     default_provider: str = "anthropic"
     default_model: str = "claude-sonnet-4-5-20250929"
+    early_game_grace_period: float = 30.0
+    reflex_check_interval: int = 10
 
 
 @dataclass
@@ -118,6 +120,8 @@ class Config:
                 idle_after_task_max=a.get('idle_after_task_max', 3.0),
                 default_provider=a.get('default_provider', 'anthropic'),
                 default_model=a.get('default_model', 'claude-sonnet-4-5-20250929'),
+                early_game_grace_period=a.get('early_game_grace_period', 30.0),
+                reflex_check_interval=a.get('reflex_check_interval', 10),
             )
 
         # Providers

@@ -216,10 +216,15 @@ class AIPlayer(pg.sprite.Sprite):
         self._task_just_completed = False
 
         # Individual kill cooldown
-        self.kill_timer = 10.0  # Initial cooldown before first kill
+        self.kill_timer = 30.0  # Initial cooldown before first kill (grace period)
         self.following_target = None  # Colour of player being stalked
         self._opportunity_cooldown = 0.0  # Prevent spam LLM calls
-        
+
+        # Intent/Reflex system
+        self.current_intent = None   # Intent object (persistent goal)
+        self.active_reflex = None    # Reflex object (instant reaction)
+        self._seen_bodies = set()    # Colours of bodies already reacted to
+
         # Debug: reasoning text from last decision
         self.last_reasoning = ""
 
@@ -287,107 +292,78 @@ class AIPlayer(pg.sprite.Sprite):
         if hasattr(self, '_opportunity_cooldown') and self._opportunity_cooldown > 0:
             self._opportunity_cooldown -= self.game.dt
             
-        # Check for urgent vision events (bodies) every few frames
-        # Only check every 10 frames to save performance
-        if self.game.frame_count % 10 == 0:
-            self._check_vision_events()
+        # Cancel stale reflexes (e.g. sabotage was fixed while en route)
+        self._cancel_stale_reflex()
 
-    def _check_vision_events(self):
-        """Passive vision check for high-priority events (bodies)."""
-        # Simple distance check for bodies
-        if not self.alive_status: 
-            return
-            
-        # Don't interrupt if already reporting/meeting
-        if self.game.meeting_manager.is_active:
+        # Reflex system: check for instant reactions every N frames
+        reflex_interval = getattr(self.game.config.ai, 'reflex_check_interval', 10)
+        if self.game.frame_count % reflex_interval == 0:
+            self._evaluate_reflexes()
+
+    def _cancel_stale_reflex(self):
+        """Cancel active reflex if conditions no longer apply."""
+        if self.active_reflex is None:
             return
 
-        vision_radius = self.game.config.ai.vision_radius
-        
-        # Check bodies
-        for body in self.game.dead_bodies:
-            # Skip if already reported
-            if body.reported:
-                continue
+        try:
+            from among_ai.ai.intent_system import ReflexType
+        except ImportError:
+            return
 
-            # Calculate distance
-            dx = body.pos.x - self.pos.x
-            dy = body.pos.y - self.pos.y
-            dist = (dx*dx + dy*dy)**0.5
-            
-            # If body is close
-            if dist < vision_radius:
-                # Force an interrupt!
-                # If we are NOT already going to report it
-                if self.current_action and self.current_action.action == "REPORT_BODY":
-                    continue
-                    
-                # Store that we saw a body to memory immediately
-                if self.memory:
-                    self.memory.add_event(f"Saw dead body of {body.player_colour}!")
-                
-                # Stop current movement/task
-                self.action_queue.clear()
-                self.current_action = None
-                if self.movement_ctrl:
-                    self.movement_ctrl.stop()
-                self.is_doing_task = False
-                
-                # Force immediate re-decision
-                self.last_decision_time = 0
-                print(f"[{self.bot_colour}] SAW BODY! Interrupting task.")
-                break
+        cancel = False
+        rt = self.active_reflex.reflex_type
 
-        # IMPOSTOR: Opportunistic kill detection
-        if self.imposter and self.brain and self._opportunity_cooldown <= 0:
-            nearby_crew = []
-            nearby_witnesses = []
-            for other in self.game.ai_players:
-                if other is self or not other.alive_status:
-                    continue
-                dx = other.pos.x - self.pos.x
-                dy = other.pos.y - self.pos.y
-                dist = (dx*dx + dy*dy)**0.5
-                if dist < vision_radius * 0.6:  # Close range
-                    if not other.imposter:
-                        nearby_crew.append(other)
-                    else:
-                        pass  # Fellow impostor, not a witness
-                elif dist < vision_radius:
-                    nearby_witnesses.append(other.bot_colour)
+        if rt == ReflexType.FIX_SABOTAGE:
+            # Sabotage was fixed by someone else
+            if not self.game.night_reactor and not self.game.night:
+                cancel = True
 
-            # If we see exactly 1 crewmate nearby, trigger opportunity
-            if len(nearby_crew) >= 1:
-                target = nearby_crew[0]
-                target_room = "nearby"
-                if hasattr(self.game, 'pathfinder') and self.game.pathfinder:
-                    target_room = self.game.pathfinder.get_room_at((target.pos.x, target.pos.y))
+        if cancel:
+            print(f"[{self.bot_colour}] Reflex cancelled: {rt.value} (no longer needed)")
+            self.active_reflex = None
+            # Stop movement toward the now-irrelevant target
+            if self.movement_ctrl:
+                self.movement_ctrl.stop()
+            # Force a fresh LLM decision
+            self.last_decision_time = 0
 
-                kill_ready = self.kill_timer <= 0
-                # Fire async opportunity decision
-                self._opportunity_cooldown = 10.0  # Don't spam
-                import asyncio, threading
-                def _fire_opportunity():
-                    loop = asyncio.new_event_loop()
-                    try:
-                        decision = loop.run_until_complete(
-                            self.brain.decide_opportunity(
-                                target.bot_colour, target_room,
-                                nearby_witnesses, kill_ready
-                            )
-                        )
-                        # Queue the decision
-                        self.action_queue.clear()
-                        self.current_action = None
-                        self.action_queue.append(decision)
-                        self.last_decision_time = time.time()
-                        self.last_reasoning = decision.reasoning[:200]
-                        print(f"[{self.bot_colour}] OPPORTUNITY: {decision.action.value} -> {decision.target_player or 'n/a'}")
-                    except Exception as e:
-                        print(f"[{self.bot_colour}] Opportunity error: {e}")
-                    finally:
-                        loop.close()
-                threading.Thread(target=_fire_opportunity, daemon=True).start()
+    def _evaluate_reflexes(self):
+        """Reflex system: instant reactions without LLM calls."""
+        if not self.alive_status:
+            return
+
+        try:
+            from among_ai.ai.intent_system import ReflexEvaluator, ReflexType
+        except ImportError:
+            return
+
+        reflex = ReflexEvaluator.evaluate(self, self.game)
+        if reflex is None:
+            return
+
+        self.active_reflex = reflex
+        print(f"[{self.bot_colour}] REFLEX: {reflex.reflex_type.value} - {reflex.reason}")
+
+        if reflex.reflex_type == ReflexType.SAW_BODY:
+            # Non-forced: interrupt current activity and force an immediate
+            # LLM decision so the AI can choose to report, flee, etc.
+            self.action_queue.clear()
+            self.current_action = None
+            if self.movement_ctrl:
+                self.movement_ctrl.stop()
+            self.is_doing_task = False
+            # Reset decision timer to 0 so the decision loop picks us up immediately
+            self.last_decision_time = 0
+        elif reflex.decision is not None:
+            # Forced reflexes (fix sabotage, opportunistic kill): queue directly
+            self.action_queue.clear()
+            self.current_action = None
+            if self.movement_ctrl:
+                self.movement_ctrl.stop()
+            self.is_doing_task = False
+            self.action_queue.append(reflex.decision)
+            self.last_decision_time = time.time()
+            self.last_reasoning = reflex.decision.reasoning[:200]
 
     def _apply_movement(self):
         """Apply velocity directly — no wall collision for AI bots.

@@ -53,7 +53,7 @@ class AIBrain(IAIBrain):
         self._trim_history()
 
     async def decide_action(self, game_state: GameStateSnapshot) -> AIDecision:
-        """Ask the LLM what to do, with full conversation history."""
+        """Ask the LLM what to do. Uses streaming if provider supports it."""
         if not self.provider or not self.provider.is_available():
             return self.get_fallback_action(game_state)
 
@@ -62,34 +62,72 @@ class AIBrain(IAIBrain):
                 self._role, self.personality
             )
             user_prompt = PromptBuilder.build_action_prompt(game_state)
-
             messages = self._build_messages(system_prompt, user_prompt)
 
-            response = await self.provider.generate_with_messages(
-                messages=messages,
-                temperature=0.7,
-                max_tokens=200,
-            )
+            # Try streaming path for lower latency
+            if hasattr(self.provider, 'generate_stream_with_messages'):
+                decision = await self._decide_action_streaming(
+                    messages, game_state
+                )
+                if decision:
+                    return decision
 
-            # Store a CONCISE summary, not the full game state dump
-            summary = (
-                f"[Turn] Room: {game_state.my_room} | "
-                f"Visible: {', '.join(p.colour for p in game_state.visible_players) or 'nobody'} | "
-                f"Tasks: {game_state.my_tasks_completed}/{game_state.my_tasks_total}"
-            )
-            if game_state.sabotage_active:
-                summary += f" | SABOTAGE: {game_state.sabotage_active}"
-            if game_state.visible_bodies:
-                summary += f" | BODIES: {', '.join(b.colour for b in game_state.visible_bodies)}"
-
-            self._record_exchange(summary, response.text.strip())
-
-            decision = ActionParser.parse(response.text)
-            return decision
+            # Fallback to batch path
+            return await self._decide_action_batch(messages, game_state)
 
         except Exception as e:
             print(f"[{self.colour}] LLM error: {e}")
             return self.get_fallback_action(game_state)
+
+    async def _decide_action_streaming(self, messages, game_state) -> AIDecision:
+        """Stream tokens and extract action from the first line as soon as possible."""
+        try:
+            accumulated = ""
+            async for chunk in self.provider.generate_stream_with_messages(
+                messages=messages, temperature=0.7, max_tokens=200
+            ):
+                accumulated += chunk
+
+                # Try to parse action from accumulated text once we have a newline
+                if "\n" in accumulated:
+                    decision = ActionParser.parse(accumulated)
+                    if decision.action != AIAction.IDLE or "IDLE" in accumulated.upper():
+                        # We got a real action, record and return early
+                        self._record_summary(game_state, accumulated.strip())
+                        return decision
+
+            # Stream finished, parse full response
+            if accumulated.strip():
+                self._record_summary(game_state, accumulated.strip())
+                return ActionParser.parse(accumulated)
+
+        except Exception as e:
+            print(f"[{self.colour}] Streaming error, falling back to batch: {e}")
+
+        return None
+
+    async def _decide_action_batch(self, messages, game_state) -> AIDecision:
+        """Original non-streaming decision path."""
+        response = await self.provider.generate_with_messages(
+            messages=messages,
+            temperature=0.7,
+            max_tokens=200,
+        )
+        self._record_summary(game_state, response.text.strip())
+        return ActionParser.parse(response.text)
+
+    def _record_summary(self, game_state, response_text: str):
+        """Record a concise summary of the exchange to history."""
+        summary = (
+            f"[Turn] Room: {game_state.my_room} | "
+            f"Visible: {', '.join(p.colour for p in game_state.visible_players) or 'nobody'} | "
+            f"Tasks: {game_state.my_tasks_completed}/{game_state.my_tasks_total}"
+        )
+        if game_state.sabotage_active:
+            summary += f" | SABOTAGE: {game_state.sabotage_active}"
+        if game_state.visible_bodies:
+            summary += f" | BODIES: {', '.join(b.colour for b in game_state.visible_bodies)}"
+        self._record_exchange(summary, response_text)
 
     async def decide_opportunity(self, target_colour: str, target_room: str,
                                   witnesses: list[str], kill_ready: bool) -> AIDecision:
@@ -165,12 +203,16 @@ class AIBrain(IAIBrain):
             text = response.text.strip()
             if text.startswith('"') and text.endswith('"'):
                 text = text[1:-1]
-            if len(text) > 200:
-                text = text[:197] + "..."
 
-            # Record concisely
+            # Record with actual discussion context so the LLM retains
+            # what was said between its turns
+            recent_lines = []
+            for msg in chat_history[-6:]:
+                recent_lines.append(f"[{msg['speaker']}]: {msg['text']}")
+            discussion_ctx = "\n".join(recent_lines) if recent_lines else "(no messages yet)"
+
             self._record_exchange(
-                f"[Meeting - {phase}] You spoke in the discussion.",
+                f"[Meeting - {phase}] Recent discussion:\n{discussion_ctx}",
                 text
             )
             return text
@@ -203,10 +245,14 @@ class AIBrain(IAIBrain):
 
             vote_result = ActionParser.parse_vote(response.text)
 
-            # Record the vote in history so they remember it
+            # Record the vote with discussion context
             vote_text = vote_result if vote_result else "SKIP"
+            discussion_summary = ""
+            if chat_history:
+                last_msgs = [f"[{m['speaker']}]: {m['text']}" for m in chat_history[-5:]]
+                discussion_summary = f" Discussion highlights:\n" + "\n".join(last_msgs)
             self._record_exchange(
-                f"[Voting] Time to vote. Alive: {', '.join(alive_players)}",
+                f"[Voting] Alive: {', '.join(alive_players)}.{discussion_summary}",
                 f"I vote for {vote_text}."
             )
             return vote_result
