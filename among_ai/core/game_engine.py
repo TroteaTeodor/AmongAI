@@ -257,7 +257,8 @@ class GameEngine:
 
         self._log_event("Game started!")
         impostors = [p.bot_colour for p in self.ai_players if p.imposter]
-        self._log_event(f"Impostors: {', '.join(impostors)}")
+        # Only print to console — do NOT broadcast impostor identity to AI brains!
+        print(f"[GAME] Impostors: {', '.join(impostors)}")
 
     def _create_provider(self, colour: str):
         """Create an LLM provider for a player based on config."""
@@ -639,7 +640,7 @@ class GameEngine:
         self.timers.restart('sabotage_cooldown')
         self.timers.start('lights_duration')
         self.sound_manager.play_effect('crises_alarm')
-        self._log_event(f"LIGHTS SABOTAGED by {ai.bot_colour}!")
+        self._log_event("LIGHTS SABOTAGED! Someone turned off the lights!")
 
     def _ai_sabotage_reactor(self, ai: AIPlayer):
         """Impostor sabotages the reactor."""
@@ -654,7 +655,7 @@ class GameEngine:
         self.timers.restart('sabotage_cooldown')
         self.timers.start('reactor_meltdown')
         self.sound_manager.play_effect('crises_alarm')
-        self._log_event(f"REACTOR SABOTAGED by {ai.bot_colour}!")
+        self._log_event("REACTOR SABOTAGED! Meltdown imminent!")
 
     def _handle_meeting_phase_change(self, new_phase: MeetingPhase):
         """Handle transitions between meeting phases."""
@@ -1041,7 +1042,7 @@ class GameEngine:
                 position=(ai.pos.x, ai.pos.y),
                 room=self.pathfinder.get_room_at((ai.pos.x, ai.pos.y)),
                 alive=ai.alive_status,
-                is_impostor=ai.imposter,
+                is_impostor=False,  # Never leak impostor identity in shared snapshot
                 tasks_completed=ai.tasks_completed,
             ))
 
