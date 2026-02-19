@@ -37,6 +37,7 @@ class GameConfig:
     sabotage_cooldown: int = 15
     task_count: int = 8
     game_speed: float = 1.0
+    human_colour: str = "Red"
 
 
 @dataclass

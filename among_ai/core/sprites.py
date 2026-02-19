@@ -62,6 +62,10 @@ class Player(pg.sprite.Sprite):
         self.got_votes = 0
         self.got_reported = False
 
+    @property
+    def bot_colour(self):
+        return self.player_colour
+
     def get_keys(self):
         if not self.alive_status or self.game.emergency:
             if not self.alive_status and not self.game.emergency:

@@ -14,19 +14,20 @@ except ImportError as e:
     input("Press Enter to exit...")
     sys.exit(1)
 
-import argparse
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
 from among_ai.config import Config
+from among_ai.constants import WIDTH, HEIGHT, TITLE
 from among_ai.core.game_engine import GameEngine
+from among_ai.ui.menu import MainMenu
 
 
 def main():
     print("Starting AmongAI...")
-    
+
     # Load configuration
     config_path = "config.yaml"
     if not os.path.exists(config_path):
@@ -39,18 +40,37 @@ def main():
         print(f"Error loading config: {e}")
         return
 
-    # Initialize game engine
-    game = GameEngine(config)
-    
+    # Initialize pygame once
+    pygame.init()
+    pygame.mixer.init()
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption(TITLE)
+
     try:
-        game.run()
+        while True:
+            # Show main menu
+            menu = MainMenu(screen, config)
+            result = menu.run()
+
+            if result.action == "quit":
+                break
+
+            # Config already updated by menu — launch game
+            game = GameEngine(config, screen)
+            try:
+                game.run()
+            except Exception as e:
+                print(f"\nGame Error: {e}")
+                import traceback
+                traceback.print_exc()
+
+            if game.quit_requested:
+                break
     except KeyboardInterrupt:
         print("\nGame stopped by user.")
-    except Exception as e:
-        print(f"\nCritical Error: {e}")
-        import traceback
-        traceback.print_exc()
-        input("Press Enter to exit...")
+    finally:
+        pygame.quit()
+
 
 if __name__ == "__main__":
     main()

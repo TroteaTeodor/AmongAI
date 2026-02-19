@@ -43,14 +43,18 @@ from among_ai.config import Config
 class GameEngine:
     """Main game engine. Manages game loop, AI players, rendering, and state."""
 
-    def __init__(self, config: Config):
-        pg.init()
-        self.screen = pg.display.set_mode((WIDTH, HEIGHT))
-        pg.display.set_caption(TITLE)
+    def __init__(self, config: Config, screen=None):
+        if screen is None:
+            pg.init()
+            self.screen = pg.display.set_mode((WIDTH, HEIGHT))
+            pg.display.set_caption(TITLE)
+        else:
+            self.screen = screen
         self.clock = pg.time.Clock()
         self.config = config
         self.dt = 0
         self.playing = False
+        self.quit_requested = False
         self.game_over_flag = False
         self.game_result = None  # "crew_wins", "impostor_wins"
 
@@ -110,6 +114,7 @@ class GameEngine:
 
         # Player (for camera follow in spectator mode)
         self.player = None
+        self.human_player = None  # Set in play_with_ai mode
         self.camera = None
 
         # Sound stubs (for sprite compatibility)
@@ -190,15 +195,40 @@ class GameEngine:
         num_players = min(self.config.game.num_players, len(ALL_COLOURS))
         num_impostors = self.config.game.num_impostors
 
-        # Determine available colours (remove player's colour in play_with_ai)
+        # Determine available colours
         available_colours = list(ALL_COLOURS[:num_players])
 
-        # Create AI players at spawn positions
+        # In play_with_ai mode, reserve one slot for the human player
+        human_colour = None
+        if mode == "play_with_ai":
+            human_colour = self.config.game.human_colour
+            # Ensure human colour is in the list
+            if human_colour not in available_colours:
+                # Replace the last AI colour with the human colour
+                available_colours[-1] = human_colour
+            # Remove from AI list — human player handled separately
+            ai_colours = [c for c in available_colours if c != human_colour]
+        else:
+            ai_colours = available_colours
+
+        # Create spawn positions
         spawns = list(PLAYER_SPAWN_POSITIONS) + list(BOT_SPAWN_POSITIONS)
         random.shuffle(spawns)
+        spawn_idx = 0
 
-        for i, colour in enumerate(available_colours):
-            spawn = spawns[i % len(spawns)]
+        # Create human player if play_with_ai mode
+        if mode == "play_with_ai" and human_colour:
+            spawn = spawns[spawn_idx % len(spawns)]
+            spawn_idx += 1
+            human_player = Player(
+                self, spawn, 0, human_colour, self.asset_manager
+            )
+            self.player = human_player
+            self.human_player = human_player
+
+        # Create AI players
+        for i, colour in enumerate(ai_colours):
+            spawn = spawns[(spawn_idx + i) % len(spawns)]
             ai_player = AIPlayer(
                 self, spawn[0], spawn[1],
                 bot_id=i, colour=colour,
@@ -230,14 +260,15 @@ class GameEngine:
 
             self.ai_players.append(ai_player)
 
-        # Assign impostors randomly
+        # Assign impostors randomly (only from AI players)
+        num_impostors = min(num_impostors, len(self.ai_players))
         impostor_indices = random.sample(range(len(self.ai_players)), num_impostors)
         for idx in impostor_indices:
             self.ai_players[idx].imposter = True
             self.ai_players[idx].brain.set_role("impostor")
 
-        # For camera: follow first player
-        if self.ai_players:
+        # For camera: follow human player in play mode, first AI in spectate
+        if mode != "play_with_ai" and self.ai_players:
             self.player = self.ai_players[0]
 
         # Camera
@@ -308,25 +339,41 @@ class GameEngine:
 
         while self.playing:
             self.dt = self.clock.tick(FPS) / 1000.0
+            # Apply game speed multiplier
+            self.dt *= self.config.game.game_speed
             self.events()
             if not self.paused:
                 self.update()
             self.draw()
 
         # Cleanup
+        self.cleanup()
+
+    def cleanup(self):
+        """Stop decision loop, clear all sprites, reset state for clean return to menu."""
         if self.decision_loop:
             self.decision_loop.stop()
+            self.decision_loop = None
+        self.ai_players.clear()
+        self.all_sprites.empty()
+        self.walls.empty()
+        self.bots.empty()
+        self.items.empty()
+        self.dead_bodies.empty()
+        self.sound_manager.stop_all()
+        self.event_log.clear()
+        self.player = None
+        self.camera = None
 
     def events(self):
         """Handle pygame events."""
         for event in pg.event.get():
             if event.type == pg.QUIT:
+                self.quit_requested = True
                 self.playing = False
-                pg.quit()
-                sys.exit()
             elif event.type == pg.KEYDOWN:
                 if event.key == pg.K_ESCAPE:
-                    self.playing = False
+                    self.playing = False  # Return to menu
                 elif event.key == pg.K_TAB:
                     # Cycle spectator camera target (safe wrap)
                     alive = [p for p in self.ai_players if p.alive_status]
@@ -782,6 +829,10 @@ class GameEngine:
         alive_crew = [p for p in self.ai_players if p.alive_status and not p.imposter]
         alive_impostors = [p for p in self.ai_players if p.alive_status and p.imposter]
 
+        # Count human player as alive crew if applicable
+        if self.human_player and self.human_player.alive_status:
+            alive_crew.append(self.human_player)
+
         # Crew wins: all tasks complete
         crew_colours = [p.bot_colour for p in self.ai_players if not p.imposter]
         total_done = self.task_manager.get_total_completed_all_crew(crew_colours)
@@ -1110,6 +1161,20 @@ class GameEngine:
 
     def _build_snapshot(self) -> GameStateSnapshot:
         all_players = []
+
+        # Include human player in snapshot if present
+        if self.human_player:
+            hp = self.human_player
+            all_players.append(PlayerSnapshot(
+                colour=hp.bot_colour,
+                position=(hp.pos.x, hp.pos.y),
+                room=self.pathfinder.get_room_at((hp.pos.x, hp.pos.y)),
+                alive=hp.alive_status,
+                is_impostor=False,
+                tasks_completed=hp.tasks_completed,
+                reported=hp.got_reported,
+            ))
+
         for ai in self.ai_players:
             all_players.append(PlayerSnapshot(
                 colour=ai.bot_colour,
