@@ -1,4 +1,4 @@
-{
+c{
   "permissions": {
     "allow": [
       "Bash(git clone:*)",

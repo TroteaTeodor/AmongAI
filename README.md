@@ -180,6 +180,14 @@ AmongAI/
 
 ---
 
+## Credits
+
+The original Among Us clone game engine, map, sprites, and assets that this project is built on top of were created by [AI0702](https://github.com/AI0702/Among-Us-clone). Without that foundation this project would not exist — huge thanks.
+
+This repository adds the full LLM-driven AI layer: per-player brains, decision loops, prompt engineering, memory, vision, meeting discussion, and the spectator interface.
+
+---
+
 ## License
 
 MIT
