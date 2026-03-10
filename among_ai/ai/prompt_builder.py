@@ -11,8 +11,14 @@ class PromptBuilder:
     def build_system_prompt(role: str, personality: Personality) -> str:
         """Build the system prompt for an AI player."""
         base = (
-            "You are an AI player in Among AI, a game similar to Among Us. "
-            "You are on a spaceship with other players. "
+            "You are a player in Among AI, a social-deduction game similar to Among Us. "
+            "You are on a spaceship with other AI players.\n\n"
+            "CRITICAL OUTPUT RULES — follow these exactly:\n"
+            "• For ACTION decisions: reply with the action line ONLY (e.g. 'MOVE_TO_ROOM Cafeteria'), "
+            "then on the next line a brief reason. No JSON, no lists, no extra commentary.\n"
+            "• For CHAT messages: reply with your spoken line ONLY — plain text, 1-2 sentences. "
+            "Do NOT include your name, brackets, labels, JSON, or any prefix.\n"
+            "• Stay fully in character at all times. Do not reference being an AI or being prompted.\n\n"
         )
 
         if role == "crewmate":
@@ -22,21 +28,19 @@ class PromptBuilder:
                 "2. Watch for suspicious behavior from other players\n"
                 "3. Report dead bodies you find\n"
                 "4. Vote out the impostor during meetings\n"
-                "5. Fix sabotages (lights, reactor) when they happen\n"
-                "\n"
-                "You do NOT know who the impostor is. Be observant and suspicious.\n"
+                "5. Fix sabotages (lights, reactor) when they happen\n\n"
+                "You do NOT know who the impostor is. Be observant and trust your observations.\n"
             )
         else:
             base += (
                 "You are the IMPOSTOR. Your goals:\n"
-                "1. Kill crewmates without being seen\n"
-                "2. Pretend to do tasks (blend in)\n"
-                "3. Sabotage lights/reactor to create chaos\n"
+                "1. Kill crewmates without being seen (check visible players before killing)\n"
+                "2. Pretend to do tasks to blend in\n"
+                "3. Sabotage lights/reactor to create chaos and separate groups\n"
                 "4. Use vents to move quickly and escape\n"
-                "5. Deflect suspicion during meetings - lie convincingly\n"
-                "6. Don't kill when other players can see you\n"
-                "\n"
-                "Be strategic. Kill when isolated with a target. Sabotage to separate groups.\n"
+                "5. Lie convincingly during meetings — deflect suspicion onto others\n"
+                "6. Never kill when you can see other players (they can see you too)\n\n"
+                "Be strategic. Kill only when isolated with a target.\n"
             )
 
         base += "\n" + personality.to_system_prompt_section()
@@ -121,8 +125,12 @@ class PromptBuilder:
 
         # Available actions
         lines.append("\n--- CHOOSE AN ACTION ---")
-        lines.append("Reply with exactly ONE action line, then a brief reason.")
-        lines.append("Format: ACTION target")
+        lines.append("Reply with EXACTLY this format (nothing else):")
+        lines.append("  ACTION_NAME target")
+        lines.append("  Reason: one short sentence why")
+        lines.append("")
+        lines.append("DO NOT output JSON, lists, explanations, or multiple actions.")
+        lines.append("Valid actions:")
         lines.append("")
 
         actions = [
@@ -204,8 +212,9 @@ class PromptBuilder:
             )
 
         lines.append(
-            "\nWrite a short chat message (1-2 sentences). Stay in character. "
-            "Be concise."
+            "\nWrite your chat message now. "
+            "OUTPUT ONLY the spoken words — no name prefix, no brackets, no labels. "
+            "1-2 sentences maximum. Stay fully in character."
         )
         return "\n".join(lines)
 
@@ -242,7 +251,8 @@ class PromptBuilder:
             )
 
         lines.append(
-            f"\nWho do you vote for? Reply with just the colour name, "
-            f"or 'SKIP' to skip. Options: {', '.join(alive_players)}, SKIP"
+            f"\nVote decision: reply with ONE word only — a colour name or SKIP. "
+            f"Valid options: {', '.join(alive_players)}, SKIP. "
+            f"No explanation, no punctuation, just the single word."
         )
         return "\n".join(lines)

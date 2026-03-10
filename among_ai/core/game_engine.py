@@ -924,8 +924,20 @@ class GameEngine:
         if self.night and self.light_mask and self.player:
             self._draw_fog()
 
-        # Draw meeting UI
+        # HUD + event log drawn before meeting overlay so they are hidden under it
+        self._draw_hud()
+        self._draw_event_log()
+
+        # Draw meeting UI (full-screen overlay — covers game HUD)
         if self.meeting_manager.is_active:
+            player_states = [
+                {
+                    "colour": ai.bot_colour,
+                    "alive": ai.alive_status,
+                    "impostor": ai.imposter,
+                }
+                for ai in self.ai_players
+            ]
             self.chat_renderer.render(
                 self.screen,
                 self.meeting_manager.chat_messages,
@@ -934,13 +946,8 @@ class GameEngine:
                 self.meeting_manager.get_vote_summary()
                 if self.meeting_manager.phase in (MeetingPhase.VOTING, MeetingPhase.RESULTS)
                 else None,
+                player_states=player_states,
             )
-
-        # HUD
-        self._draw_hud()
-
-        # Event log
-        self._draw_event_log()
 
         pg.display.flip()
 
@@ -1034,51 +1041,91 @@ class GameEngine:
                     r_text = small.render(line, True, (230, 230, 200))
                     self.screen.blit(r_text, (8 + text_pad, start_y + header_h + 6 + i * line_h))
         
-        # Task progress bar
-        crew = [p.bot_colour for p in self.ai_players if not p.imposter]
-        done = self.task_manager.get_total_completed_all_crew(crew)
-        total = self.task_manager.get_total_tasks_all_crew(crew)
-        if total > 0:
-            pct = done / total
-            bar_w = 200
-            bar_h = 16
-            bx, by = WIDTH - bar_w - 10, 10
-            pg.draw.rect(self.screen, (50, 50, 50), (bx, by, bar_w, bar_h))
-            pg.draw.rect(self.screen, (0, 200, 0), (bx, by, int(bar_w * pct), bar_h))
-            pg.draw.rect(self.screen, WHITE, (bx, by, bar_w, bar_h), 1)
-            text = small.render(f"Tasks: {done}/{total}", True, WHITE)
-            self.screen.blit(text, (bx + 5, by + 1))
-
-        # Alive count
-        alive = sum(1 for p in self.ai_players if p.alive_status)
-        total_p = len(self.ai_players)
-        alive_text = small.render(f"Alive: {alive}/{total_p}", True, WHITE)
-        self.screen.blit(alive_text, (WIDTH - 210, 32))
-
-        # Sabotage indicators
+        # Sabotage indicators (always visible)
         if self.night:
             sab = font.render("LIGHTS OFF!", True, (255, 50, 50))
-            self.screen.blit(sab, (WIDTH // 2 - 50, 10))
+            self.screen.blit(sab, (WIDTH // 2 - sab.get_width() // 2, 10))
         if self.night_reactor:
             remaining = self.timers.get('reactor_meltdown').get_remaining_int()
             sab = font.render(f"REACTOR MELTDOWN: {remaining}s", True, (255, 50, 50))
-            self.screen.blit(sab, (WIDTH // 2 - 80, 10))
+            self.screen.blit(sab, (WIDTH // 2 - sab.get_width() // 2, 10))
 
-        # Player list
-        y = 55
+        # Right-side panel: hide during meetings (meeting overlay covers everything)
+        if not self.emergency:
+            self._draw_right_panel(small)
+
+    def _draw_right_panel(self, small_font):
+        """Draw the right-side player overview panel (gameplay only, not during meetings)."""
+        panel_w = 230
+        panel_x = WIDTH - panel_w - 8
+        panel_pad = 8
+
+        # --- Task progress bar ---
+        crew = [p.bot_colour for p in self.ai_players if not p.imposter]
+        done = self.task_manager.get_total_completed_all_crew(crew)
+        total = self.task_manager.get_total_tasks_all_crew(crew)
+        bar_y = 8
+        bar_h = 18
+        if total > 0:
+            pct = done / total
+            pg.draw.rect(self.screen, (35, 35, 45), (panel_x, bar_y, panel_w, bar_h))
+            pg.draw.rect(self.screen, (20, 180, 60), (panel_x, bar_y, int(panel_w * pct), bar_h))
+            pg.draw.rect(self.screen, (80, 80, 100), (panel_x, bar_y, panel_w, bar_h), 1)
+            t = small_font.render(f"Tasks  {done}/{total}", True, WHITE)
+            self.screen.blit(t, (panel_x + 5, bar_y + 2))
+
+        # --- Player overview ---
+        alive_players = [p for p in self.ai_players if p.alive_status]
+        dead_players  = [p for p in self.ai_players if not p.alive_status]
+        alive_count = len(alive_players)
+        total_count = len(self.ai_players)
+
+        # Panel background
+        row_h = 22
+        header_h = 24
+        panel_h = header_h + total_count * row_h + panel_pad * 2
+        panel_y = bar_h + 14
+        bg = pg.Surface((panel_w, panel_h), pg.SRCALPHA)
+        bg.fill((12, 12, 22, 200))
+        self.screen.blit(bg, (panel_x, panel_y))
+        pg.draw.rect(self.screen, (55, 55, 80), (panel_x, panel_y, panel_w, panel_h), 1)
+
+        # Header
+        hdr = small_font.render(f"PLAYERS  {alive_count}/{total_count} alive", True, (160, 160, 200))
+        self.screen.blit(hdr, (panel_x + panel_pad, panel_y + 4))
+        pg.draw.line(self.screen, (55, 55, 80),
+                     (panel_x, panel_y + header_h), (panel_x + panel_w, panel_y + header_h), 1)
+
+        # Rows
+        y = panel_y + header_h + 4
         for ai in self.ai_players:
-            colour = PLAYER_DISPLAY_COLORS.get(ai.bot_colour, WHITE)
-            status = "ALIVE" if ai.alive_status else "DEAD"
-            room = self.pathfinder.get_room_at((ai.pos.x, ai.pos.y))
-            provider = ""
-            if ai.brain and ai.brain.provider:
-                provider = f" [{ai.brain.provider.get_provider_name()}]"
-            alpha = 255 if ai.alive_status else 100
-            text = small.render(f"{ai.bot_colour}: {room}{provider}", True, colour)
-            if not ai.alive_status:
-                text.set_alpha(100)
-            self.screen.blit(text, (WIDTH - 210, y))
-            y += 16
+            colour_rgb = PLAYER_DISPLAY_COLORS.get(ai.bot_colour, WHITE)
+            alive = ai.alive_status
+
+            # Coloured dot
+            dot_x = panel_x + panel_pad + 6
+            dot_y = y + row_h // 2
+            if alive:
+                pg.draw.circle(self.screen, colour_rgb, (dot_x, dot_y), 6)
+            else:
+                pg.draw.circle(self.screen, (60, 60, 70), (dot_x, dot_y), 6)
+                pg.draw.circle(self.screen, colour_rgb, (dot_x, dot_y), 6, 1)
+
+            # Name + status
+            name_col = colour_rgb if alive else (80, 80, 90)
+            name_txt = small_font.render(ai.bot_colour, True, name_col)
+            self.screen.blit(name_txt, (dot_x + 12, y + 3))
+
+            if alive:
+                room = self.pathfinder.get_room_at((ai.pos.x, ai.pos.y))
+                room_short = room[:12] if room else "?"
+                room_txt = small_font.render(room_short, True, (120, 120, 140))
+                self.screen.blit(room_txt, (panel_x + panel_pad + 90, y + 3))
+            else:
+                dead_txt = small_font.render("☠ DEAD", True, (100, 60, 60))
+                self.screen.blit(dead_txt, (panel_x + panel_pad + 90, y + 3))
+
+            y += row_h
 
     def _draw_event_log(self):
         """Draw recent events in bottom-left corner."""

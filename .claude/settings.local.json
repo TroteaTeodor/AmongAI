@@ -3,7 +3,9 @@
     "allow": [
       "Bash(git clone:*)",
       "Bash(wc:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(find \"C:/Users/teodo/OneDrive/Documents/Work/AmongAI\" -name \"* copy*\" -o -name \"*Copy*\" -o -name \"*screenshot*\" -o -name \"*Screenshot*\" 2>/dev/null | grep -iv \"assets/\")",
+      "Bash(mkdir -p \"C:/Users/teodo/OneDrive/Documents/Work/AmongAI/docs/screenshots\" && cp \"C:/Users/teodo/OneDrive/Documents/Work/image copy 2.png\" \"C:/Users/teodo/OneDrive/Documents/Work/AmongAI/docs/screenshots/menu.png\" && cp \"C:/Users/teodo/OneDrive/Documents/Work/image copy.png\" \"C:/Users/teodo/OneDrive/Documents/Work/AmongAI/docs/screenshots/gameplay.png\" && cp \"C:/Users/teodo/OneDrive/Documents/Work/image.png\" \"C:/Users/teodo/OneDrive/Documents/Work/AmongAI/docs/screenshots/meeting.png\" && echo \"Done\")"
     ]
   }
 }

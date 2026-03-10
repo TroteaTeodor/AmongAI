@@ -1,24 +1,58 @@
-# Python
+# === Python ===
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
 
-# Environments
-.env
-.venv
-env/
+# === Virtual environments ===
+.venv/
 venv/
-ENV/
+env/
 env.bak/
 venv.bak/
+ENV/
 
-# IDEs
+# === Environment & secrets — NEVER commit these ===
+.env
+.env.*
+*.env
+secrets.yaml
+secrets.json
+
+# === IDE / editor ===
 .vscode/
 .idea/
+*.suo
+*.user
 *.swp
 *.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
 
-# Project specific
+# === Logs ===
 logs/
 *.log
-.DS_Store
+
+# === Testing / coverage ===
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# === Game-specific ===
+# Tiled editor backup files
+*.tmx~
+# Any locally generated save state
+save_state.json

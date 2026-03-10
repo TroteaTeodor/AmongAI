@@ -54,7 +54,7 @@ players:
 
   - colour: "Blue"
     provider: "openrouter"
-    model: "mistralai/mistral-nemo"
+    model: "mistralai/mistral-large-2411"
     personality:
       name: "Detective"
       aggression: 0.3
@@ -145,7 +145,7 @@ players:
 
   - colour: "Purple"
     provider: "openrouter"
-    model: "microsoft/phi-4"
+    model: "qwen/qwen-2.5-72b-instruct"
     personality:
       name: "Skeptic"
       aggression: 0.5

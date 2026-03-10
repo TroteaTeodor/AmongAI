@@ -7,6 +7,8 @@ from among_ai.constants import WIDTH, HEIGHT, FONT, WHITE, BLACK, PLAYER_DISPLAY
 class ChatRenderer:
     """Renders scrollable chat messages on the game screen during meetings."""
 
+    PLAYER_PANEL_W = 200  # Width of right-side player overview during meetings
+
     def __init__(self):
         self.font = None
         self.small_font = None
@@ -14,7 +16,8 @@ class ChatRenderer:
         self._scroll_offset = 0  # In pixels, scrolls upward
         self._line_height = 26
         self._padding = 12
-        self._chat_area = pg.Rect(50, 70, WIDTH - 100, HEIGHT - 170)
+        # Chat area leaves room on the right for the player overview panel
+        self._chat_area = pg.Rect(50, 70, WIDTH - 100 - self.PLAYER_PANEL_W - 10, HEIGHT - 170)
         self._rendered_height = 0  # Total height of all rendered messages
         self._auto_scroll = True  # Auto-scroll to bottom on new messages
         self._last_msg_count = 0
@@ -41,7 +44,7 @@ class ChatRenderer:
 
     def render(self, screen: pg.Surface, messages: list[dict],
                phase: str, time_remaining: float,
-               vote_summary: dict = None):
+               vote_summary: dict = None, player_states: list = None):
         """Render the meeting UI with scrollable chat messages."""
         self._ensure_fonts()
 
@@ -161,6 +164,61 @@ class ChatRenderer:
         # Vote summary during voting/results
         if vote_summary and phase in ("voting", "results"):
             self._render_votes(screen, vote_summary)
+
+        # Right-side player overview
+        if player_states:
+            self._render_player_overview(screen, player_states)
+
+    def _render_player_overview(self, screen, player_states: list):
+        """Compact alive/dead player list shown on the right during meetings."""
+        pw = self.PLAYER_PANEL_W
+        px = WIDTH - pw - 10
+        py = 70
+        row_h = 28
+        pad = 8
+        panel_h = len(player_states) * row_h + pad * 2 + 24
+
+        # Background
+        bg = pg.Surface((pw, panel_h), pg.SRCALPHA)
+        bg.fill((14, 14, 28, 220))
+        screen.blit(bg, (px, py))
+        pg.draw.rect(screen, (60, 60, 100), (px, py, pw, panel_h), 1)
+
+        # Header
+        hdr = self.small_font.render("WHO'S ALIVE", True, (160, 160, 210))
+        screen.blit(hdr, (px + pad, py + 5))
+        pg.draw.line(screen, (60, 60, 100), (px, py + 22), (px + pw, py + 22), 1)
+
+        y = py + 24 + pad // 2
+        for p in player_states:
+            colour_rgb = PLAYER_DISPLAY_COLORS.get(p["colour"], WHITE)
+            alive = p["alive"]
+
+            # Dot
+            dot_x = px + pad + 6
+            dot_y = y + row_h // 2
+            if alive:
+                pg.draw.circle(screen, colour_rgb, (dot_x, dot_y), 7)
+            else:
+                pg.draw.circle(screen, (50, 50, 60), (dot_x, dot_y), 7)
+                pg.draw.circle(screen, colour_rgb, (dot_x, dot_y), 7, 1)
+
+            # Name
+            name_col = WHITE if alive else (80, 80, 90)
+            name_surf = self.small_font.render(p["colour"], True, name_col)
+            screen.blit(name_surf, (dot_x + 14, dot_y - name_surf.get_height() // 2))
+
+            # Status badge
+            if alive:
+                badge_col = (40, 160, 80)
+                badge_txt = "ALIVE"
+            else:
+                badge_col = (120, 40, 40)
+                badge_txt = "DEAD"
+            badge_surf = self.small_font.render(badge_txt, True, badge_col)
+            screen.blit(badge_surf, (px + pw - badge_surf.get_width() - pad,
+                                     dot_y - badge_surf.get_height() // 2))
+            y += row_h
 
     def _render_votes(self, screen, vote_summary: dict):
         """Render vote tally at the bottom."""

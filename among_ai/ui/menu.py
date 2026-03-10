@@ -54,12 +54,7 @@ class MainMenu:
             th = int(self.title_image.get_height() * ratio)
             self.title_image = pg.transform.smoothscale(self.title_image, (tw, th))
 
-        self.shhh_image = _load_image("shhhhhhh.png")
-        if self.shhh_image:
-            sw = 320
-            ratio = sw / self.shhh_image.get_width()
-            sh = int(self.shhh_image.get_height() * ratio)
-            self.shhh_image = pg.transform.smoothscale(self.shhh_image, (sw, sh))
+        self.shhh_image = None  # removed from menu
 
         self.sel_character = _load_image("sel.png")
         if self.sel_character:
@@ -77,27 +72,27 @@ class MainMenu:
                 self.choose_colour_banner, (bw, bh)
             )
 
-        # Mode buttons
+        # Mode buttons  (no texture PNG — clean flat look)
         btn_w, btn_h = 300, 65
         self.spectate_btn = ImageButton(
-            100, 340, "freeplay.png", "SPECTATE AI",
-            width=btn_w, height=btn_h, font_size=24, selected=True,
+            100, 340, "", "SPECTATE AI",
+            width=btn_w, height=btn_h, font_size=24, selected=True, no_texture=True,
         )
         self.play_btn = ImageButton(
-            100, 430, "online.png", "PLAY WITH AI",
-            width=btn_w, height=btn_h, font_size=24,
+            100, 430, "", "PLAY WITH AI",
+            width=btn_w, height=btn_h, font_size=24, disabled=True, no_texture=True,
         )
 
-        # Quit button
+        # Quit button (flat, no texture)
         self.quit_btn = ImageButton(
-            60, HEIGHT - 100, "quit.png", "",
-            width=200, height=55, font_size=20,
+            60, HEIGHT - 100, "", "QUIT",
+            width=200, height=55, font_size=20, no_texture=True,
         )
 
-        # Start button
+        # Start button (flat, no texture)
         self.start_btn = ImageButton(
-            WIDTH // 2 - 180, HEIGHT - 110, "freeplay.png", "START GAME",
-            width=360, height=70, font_size=30,
+            WIDTH // 2 - 180, HEIGHT - 110, "", "START GAME",
+            width=360, height=70, font_size=30, no_texture=True,
         )
 
         # Settings sliders
@@ -231,10 +226,7 @@ class MainMenu:
                     self.spectate_btn.selected = True
                     self.play_btn.selected = False
 
-                if self.play_btn.handle_event(event):
-                    self.mode = "play_with_ai"
-                    self.play_btn.selected = True
-                    self.spectate_btn.selected = False
+                # play_btn is disabled — no-op
 
                 # Quit
                 if self.quit_btn.handle_event(event):
@@ -344,11 +336,6 @@ class MainMenu:
         self.quit_btn.draw(self.screen)
         self.start_btn.draw(self.screen)
 
-        # Decorative shhh image
-        if self.shhh_image:
-            self.screen.blit(
-                self.shhh_image,
-                (WIDTH - self.shhh_image.get_width() - 40, HEIGHT - self.shhh_image.get_height() - 20),
-            )
+        # (shhh image removed)
 
         pg.display.flip()

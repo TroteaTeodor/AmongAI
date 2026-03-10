@@ -72,26 +72,41 @@ def _get_select_overlay():
 
 
 class ImageButton:
-    """Button that uses a PNG image as its base, with optional text overlay."""
+    """Button that uses a PNG image as its base, with optional text overlay.
+
+    Parameters
+    ----------
+    no_texture : bool
+        When True the PNG is not loaded; a flat styled rectangle is drawn instead.
+    disabled : bool
+        When True the button cannot be clicked or hovered and is rendered muted.
+    """
 
     def __init__(self, x, y, image_name, text="", width=None, height=None,
-                 font_size=22, selected=False):
+                 font_size=22, selected=False, disabled=False, no_texture=False):
         self.x = x
         self.y = y
         self.text = text
         self.font_size = font_size
         self.selected = selected
+        self.disabled = disabled
+        self.no_texture = no_texture
         self._hovered = False
         self._was_hovered = False
 
-        # Load base image
-        self.base_image = _load_image(image_name)
+        # Load base image (skip when no_texture requested)
+        self._has_real_image = False
+        self.base_image = None
+        if not no_texture:
+            self.base_image = _load_image(image_name)
+            if self.base_image is not None:
+                self._has_real_image = True
+
         if self.base_image is None:
-            # Fallback: dark rectangle
             w = width or 260
             h = height or 55
             self.base_image = pg.Surface((w, h), pg.SRCALPHA)
-            self.base_image.fill((30, 30, 50, 220))
+            self.base_image.fill((0, 0, 0, 0))  # transparent placeholder
 
         # Scale if dimensions specified
         if width and height:
@@ -109,9 +124,9 @@ class ImageButton:
         self.height = self.base_image.get_height()
         self.rect = pg.Rect(x, y, self.width, self.height)
 
-        # Prepare select overlay scaled to match
+        # Prepare select overlay (only used for textured buttons)
         overlay_src = _get_select_overlay()
-        if overlay_src:
+        if overlay_src and self._has_real_image:
             self._select_overlay = pg.transform.smoothscale(
                 overlay_src, (self.width + 16, self.height + 16)
             )
@@ -120,6 +135,8 @@ class ImageButton:
 
     def handle_event(self, event) -> bool:
         """Returns True if button was clicked."""
+        if self.disabled:
+            return False
         if event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
             if self.rect.collidepoint(event.pos):
                 snd = _get_sound("click")
@@ -129,6 +146,10 @@ class ImageButton:
         return False
 
     def update(self, mouse_pos):
+        if self.disabled:
+            self._hovered = False
+            self._was_hovered = False
+            return
         self._hovered = self.rect.collidepoint(mouse_pos)
         if self._hovered and not self._was_hovered:
             snd = _get_sound("hover")
@@ -137,22 +158,46 @@ class ImageButton:
         self._was_hovered = self._hovered
 
     def draw(self, surface):
-        # Draw select overlay if selected or hovered
-        if (self.selected or self._hovered) and self._select_overlay:
-            ox = self.x - 8
-            oy = self.y - 8
-            surface.blit(self._select_overlay, (ox, oy))
+        if self._has_real_image and not self.no_texture:
+            # --- Textured button ---
+            if (self.selected or self._hovered) and self._select_overlay:
+                surface.blit(self._select_overlay, (self.x - 8, self.y - 8))
+            surface.blit(self.base_image, (self.x, self.y))
+        else:
+            # --- Flat styled button ---
+            if self.disabled:
+                bg   = (28, 28, 40, 160)
+                border = (50, 50, 65)
+            elif self.selected:
+                bg   = (80, 15, 15, 220)
+                border = (200, 50, 50)
+            elif self._hovered:
+                bg   = (50, 50, 75, 230)
+                border = (120, 120, 180)
+            else:
+                bg   = (35, 35, 52, 210)
+                border = (70, 70, 105)
 
-        # Draw base image
-        surface.blit(self.base_image, (self.x, self.y))
+            flat = pg.Surface((self.width, self.height), pg.SRCALPHA)
+            flat.fill(bg)
+            surface.blit(flat, (self.x, self.y))
+            pg.draw.rect(surface, border, self.rect, 2, border_radius=8)
 
-        # Draw text overlay
+        # Draw text
         if self.text:
             font = _load_font(self.font_size)
-            text_surf = font.render(self.text, True, WHITE)
+            text_colour = (90, 90, 110) if self.disabled else WHITE
+            text_surf = font.render(self.text, True, text_colour)
             tx = self.x + (self.width - text_surf.get_width()) // 2
             ty = self.y + (self.height - text_surf.get_height()) // 2
             surface.blit(text_surf, (tx, ty))
+
+        # "SOON" badge for disabled buttons
+        if self.disabled:
+            badge_font = _load_font(10)
+            badge = badge_font.render("DISABLED", True, (80, 80, 100))
+            surface.blit(badge, (self.x + self.width - badge.get_width() - 6,
+                                 self.y + self.height - badge.get_height() - 4))
 
 
 class Slider:
